@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Project specific
+checkpoints/
+memory/
+data/
+datasets/
+output/
+outputs/
+
+# Model weights and adapters
+*.pth
+*.ckpt
+*.safetensors
+*.h5
+*.pt
+
+# Generated 3D assets
+*.glb
+*.obj
+*.log
