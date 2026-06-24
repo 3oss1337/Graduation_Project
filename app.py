@@ -427,11 +427,19 @@ def load_rembg():
 
 @st.cache_resource(show_spinner=False)
 def load_classifier():
-    """Load CLIP zero-shot classifier (cached — only runs once)."""
-    return hf_pipeline(
-        "zero-shot-image-classification",
-        model="openai/clip-vit-base-patch32",
-    )
+    """Load MobileNetV4 Lite classifier (cached — only runs once)."""
+    import timm
+    from torchvision import transforms
+    model = timm.create_model('mobilenetv4_conv_small', pretrained=True)
+    model.eval()
+    
+    transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    return model, transform
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -455,16 +463,42 @@ def preprocess(image: Image.Image, do_remove_bg: bool, fg_ratio: float) -> Image
     return image
 
 
-def classify_image(image: Image.Image):
-    """Classify furniture using CLIP zero-shot classification."""
-    classifier = load_classifier()
-    rgb_image = image.convert("RGB")
-    predictions = classifier(rgb_image, candidate_labels=CATEGORIES)
+# Hardcoded ImageNet index mappings to our furniture categories
+IMAGENET_FURNITURE_MAPPING = {
+    "chair":       [423, 559, 765, 857],  # barber chair, folding chair, rocking chair, throne
+    "bench":       [703],                 # park bench
+    "table":       [532],                 # dining table
+    "desk":        [514],                 # desk
+    "sofa":        [805, 831],            # sofa, studio couch
+    "stool":       [831],                 # fallback to studio couch/daybed
+    "bed":         [823, 427, 512],      # four-poster bed, cradle, crib
+    "wardrobe":    [894],                 # wardrobe
+    "cabinet":     [490, 553, 646],      # china cabinet, file cabinet, medicine chest
+    "bookshelf":   [456],                 # bookcase
+    "swivelchair": [423],                 # fallback to chair index
+}
 
-    # predictions is a list of dicts sorted by score descending
-    all_scores = {p["label"]: p["score"] for p in predictions}
-    top = predictions[0]
-    return top["label"], top["score"], all_scores
+def classify_image(image: Image.Image):
+    """Classify furniture using MobileNetV4 Lite classification."""
+    model, transform = load_classifier()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    
+    img_tensor = transform(image.convert("RGB")).unsqueeze(0).to(device)
+    with torch.no_grad():
+        logits = model(img_tensor)
+        probabilities = torch.softmax(logits, dim=1)[0]
+        
+    all_scores = {}
+    for cat in CATEGORIES:
+        indices = IMAGENET_FURNITURE_MAPPING.get(cat, [])
+        score = sum(probabilities[idx].item() for idx in indices)
+        all_scores[cat] = score
+        
+    best_category = max(all_scores, key=all_scores.get)
+    best_score = all_scores[best_category]
+    
+    return best_category, best_score, all_scores
 
 
 def load_lora_adapter(category: str) -> str:
@@ -797,7 +831,7 @@ def main():
 
 if __name__ == "__main__":
     # Warm up all models in background
-    with st.spinner("Loading models (TripoSR + CLIP classifier)..."):
+    with st.spinner("Loading models (TripoSR + MobileNetV4 Lite classifier)..."):
         load_model()
         load_rembg()
         load_classifier()

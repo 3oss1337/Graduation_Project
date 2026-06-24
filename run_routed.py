@@ -77,33 +77,73 @@ def preprocess_image(path, remove_bg=True):
         return raw.convert("RGB")
 
 
-# ── Zero-shot classification ─────────────────────────────────────────────
+# ── MobileNetV4 Lite classification ──────────────────────────────────────
 
-_clip_pipeline = None  # cached for the lifetime of this process
+_mobilenet_model = None
+_mobilenet_transform = None
+
+# Hardcoded ImageNet index mappings to our furniture categories
+IMAGENET_FURNITURE_MAPPING = {
+    "chair":       [423, 559, 765, 857],  # barber chair, folding chair, rocking chair, throne
+    "bench":       [703],                 # park bench
+    "table":       [532],                 # dining table
+    "desk":        [514],                 # desk
+    "sofa":        [805, 831],            # sofa, studio couch
+    "stool":       [831],                 # fallback to studio couch/daybed
+    "bed":         [823, 427, 512],      # four-poster bed, cradle, crib
+    "wardrobe":    [894],                 # wardrobe
+    "cabinet":     [490, 553, 646],      # china cabinet, file cabinet, medicine chest
+    "bookshelf":   [456],                 # bookcase
+}
 
 def classify_image(image, candidate_labels, device):
-    """Use CLIP zero-shot classification to determine furniture category.
-    The pipeline is built once and reused on subsequent calls."""
-    global _clip_pipeline
-    from transformers import pipeline
+    """Use MobileNetV4 Lite classification to determine furniture category.
+    The model is loaded once and cached for subsequent calls."""
+    global _mobilenet_model, _mobilenet_transform
+    import timm
+    from torchvision import transforms
 
-    if _clip_pipeline is None:
-        print("  Loading CLIP model...")
-        _clip_pipeline = pipeline(
-            "zero-shot-image-classification",
-            model="openai/clip-vit-base-patch32",
-            device=device,
-        )
+    if _mobilenet_model is None:
+        print("  Loading MobileNetV4 Lite model...")
+        _mobilenet_model = timm.create_model('mobilenetv4_conv_small', pretrained=True)
+        _mobilenet_model.to(device)
+        _mobilenet_model.eval()
 
-    results = _clip_pipeline(image, candidate_labels=candidate_labels)
+        _mobilenet_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    img_tensor = _mobilenet_transform(image.convert("RGB")).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        logits = _mobilenet_model(img_tensor)
+        probabilities = torch.softmax(logits, dim=1)[0]
+
+    # Map ImageNet class probabilities to our candidate labels
+    category_scores = {}
+    for cat in candidate_labels:
+        indices = IMAGENET_FURNITURE_MAPPING.get(cat, [])
+        score = sum(probabilities[idx].item() for idx in indices)
+        category_scores[cat] = score
+
+    # Find the top predicted category
+    best_category = max(category_scores, key=category_scores.get)
+    best_score = category_scores[best_category]
 
     print(f"\n  Classification scores:")
-    for r in results:
-        bar = "#" * int(r["score"] * 40)
-        print(f"    {r['label']:<15} {r['score']:.3f}  {bar}")
+    for cat, score in category_scores.items():
+        bar = "#" * int(score * 40)
+        print(f"    {cat:<15} {score:.3f}  {bar}")
 
-    top = results[0]
-    return top["label"], top["score"]
+    if best_score < 0.01:
+        print("  [warning] Very low confidence, defaulting to 'chair'")
+        return "chair", 0.0
+
+    return best_category, best_score
+
 
 
 # ── Main ──────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ FurnishAR Backend v3 — Hybrid pipeline
 Supports two frontend pipeline modes:
 
   Single-Object mode  (one item in frame)
-    POST /reconstruct  →  rembg bg-removal → CLIP classify → LoRA route → TripoSR → GLB
+    POST /reconstruct  →  rembg bg-removal → CLIP classify → LoRA route → TripoSR → Adaptive MC → GLB
 
   Crowded-Scene mode  (multiple items in frame)
     POST /segment      →  SAM click-to-select → returns cropped object + mask preview
@@ -97,17 +97,21 @@ ADAPTER_DIR     = Path("adapters")
 model          = None
 adapter_manager = None
 sam_predictor  = None
-clip_pipeline  = None
+mobilenet_model = None
+mobilenet_transform = None
 rembg_session  = None
 DEVICE         = "cpu"
 TRIPOSR_READY  = False
 SAM_READY      = False
 CLIP_READY     = False
 PUBLIC_URL     = None   # e.g. "https://abc123.ngrok-free.app"
+USE_ADAPTIVE_MC = False  # set via --adaptive CLI flag
+MC_RESOLUTION   = 256    # fine grid resolution, set via --mc-resolution
+MC_COARSE_RESOLUTION = 128  # coarse grid resolution, set via --mc-coarse-resolution
 
 # ── Startup — load everything once ───────────────────────────────────────────
 def load_all_models():
-    global model, adapter_manager, sam_predictor, clip_pipeline
+    global model, adapter_manager, sam_predictor, mobilenet_model, mobilenet_transform
     global rembg_session, DEVICE, TRIPOSR_READY, SAM_READY, CLIP_READY
 
     import torch
@@ -137,18 +141,24 @@ def load_all_models():
     except Exception as e:
         print(f"SAM load failed: {e}", flush=True)
 
-    # ── 3. CLIP ───────────────────────────────────────────────────────────────
+    # ── 3. MobileNetV4 Lite ───────────────────────────────────────────────────
     try:
-        from transformers import pipeline as hf_pipeline
-        clip_pipeline = hf_pipeline(
-            "zero-shot-image-classification",
-            model="openai/clip-vit-base-patch32",
-            device=DEVICE,
-        )
+        import timm
+        from torchvision import transforms
+        mobilenet_model = timm.create_model('mobilenetv4_conv_small', pretrained=True)
+        mobilenet_model.to(DEVICE)
+        mobilenet_model.eval()
+
+        mobilenet_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
         CLIP_READY = True
-        print("CLIP ready.", flush=True)
+        print("MobileNetV4 Lite ready.", flush=True)
     except Exception as e:
-        print(f"CLIP load failed: {e}", flush=True)
+        print(f"MobileNetV4 load failed: {e}", flush=True)
 
     # ── 4. TripoSR + LoRA ─────────────────────────────────────────────────────
     try:
@@ -157,7 +167,7 @@ def load_all_models():
         from tsr.models.transformer.lora import LoRAAdapterManager
 
         model = TSR.from_pretrained(
-            "stabilityai/TripoSR",
+            "./stabilityai",
             config_name="config.yaml",
             weight_name="model.ckpt",
         )
@@ -301,12 +311,43 @@ def _img_to_b64(img: Image.Image, fmt="PNG") -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+# Hardcoded ImageNet index mappings to our furniture categories
+IMAGENET_FURNITURE_MAPPING = {
+    "chair":       [423, 559, 765, 857],  # barber chair, folding chair, rocking chair, throne
+    "bench":       [703],                 # park bench
+    "table":       [532],                 # dining table
+    "desk":        [514],                 # desk
+    "sofa":        [805, 831],            # sofa, studio couch
+    "stool":       [831],                 # fallback to studio couch/daybed
+    "bed":         [823, 427, 512],      # four-poster bed, cradle, crib
+    "wardrobe":    [894],                 # wardrobe
+    "cabinet":     [490, 553, 646],      # china cabinet, file cabinet, medicine chest
+    "bookshelf":   [456],                 # bookcase
+    "swivelchair": [423],                 # fallback to chair index
+}
+
 def _classify(img: Image.Image):
-    """Run CLIP, return (category_str, confidence_float)."""
-    results = clip_pipeline(img, candidate_labels=CLIP_LABELS)
-    top = results[0]
-    category = LABEL_TO_CATEGORY.get(top["label"], "chair")
-    return category, float(top["score"])
+    """Run MobileNetV4 Lite, return (category_str, confidence_float)."""
+    import torch
+    
+    img_tensor = mobilenet_transform(img.convert("RGB")).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        logits = mobilenet_model(img_tensor)
+        probabilities = torch.softmax(logits, dim=1)[0]
+        
+    category_scores = {}
+    for cat in IMAGENET_FURNITURE_MAPPING.keys():
+        indices = IMAGENET_FURNITURE_MAPPING[cat]
+        score = sum(probabilities[idx].item() for idx in indices)
+        category_scores[cat] = score
+        
+    best_category = max(category_scores, key=category_scores.get)
+    best_score = category_scores[best_category]
+    
+    if best_score < 0.01:
+        return "chair", 0.0
+        
+    return best_category, best_score
 
 
 def _set_adapter(category: str):
@@ -326,6 +367,7 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
     Full pipeline:
       TripoSR encode →
         1. Extract mesh WITH vertex colors  → used for Three.js viewer JSON
+           (uses adaptive MC if --adaptive flag is set, otherwise standard MC)
         2. Extract mesh WITHOUT vertex colors → bake texture → GLB for AR
       If texture baking fails, fall back to exporting the vertex-color mesh as GLB.
 
@@ -351,9 +393,27 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
             scene_codes = model([img], device=DEVICE)
     scene_codes = scene_codes.float()
 
-    # ── 1. Vertex-color mesh — for the Three.js viewer (same quality as run_routed.py)
-    vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)
-    vc_mesh = vc_meshes[0]
+    # ── 1. Vertex-color mesh ──────────────────────────────────────────────
+    if USE_ADAPTIVE_MC:
+        try:
+            from adaptive_mc import extract_mesh_adaptive
+            vc_mesh = extract_mesh_adaptive(
+                model,
+                scene_codes[0],
+                device=DEVICE,
+                resolution=resolution,
+                coarse_resolution=MC_COARSE_RESOLUTION,
+                has_vertex_color=True,
+            )
+            print(f"Adaptive MC (vertex-color): {len(vc_mesh.vertices):,} verts, {len(vc_mesh.faces):,} faces", flush=True)
+        except Exception as e:
+            print(f"Adaptive MC failed ({e}) — falling back to standard.", flush=True)
+            vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)
+            vc_mesh = vc_meshes[0]
+    else:
+        vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)
+        vc_mesh = vc_meshes[0]
+        print(f"Standard MC (vertex-color): {len(vc_mesh.vertices):,} verts, {len(vc_mesh.faces):,} faces", flush=True)
 
     # ── 2. Try texture-baked GLB for model-viewer / AR
     glb_bytes = None
@@ -362,8 +422,25 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
         from tsr.bake_texture import bake_texture
 
         # Extract a second mesh WITHOUT vertex colors — bake_texture needs raw geometry
-        raw_meshes = model.extract_mesh(scene_codes, has_vertex_color=False, resolution=resolution)
-        raw_mesh = raw_meshes[0]
+        if USE_ADAPTIVE_MC:
+            try:
+                from adaptive_mc import extract_mesh_adaptive
+                raw_mesh = extract_mesh_adaptive(
+                    model,
+                    scene_codes[0],
+                    device=DEVICE,
+                    resolution=resolution,
+                    coarse_resolution=MC_COARSE_RESOLUTION,
+                    has_vertex_color=False,
+                )
+                print(f"Adaptive MC (raw): {len(raw_mesh.vertices):,} verts, {len(raw_mesh.faces):,} faces", flush=True)
+            except Exception as e:
+                print(f"Adaptive MC raw mesh failed ({e}) — falling back to standard.", flush=True)
+                raw_meshes = model.extract_mesh(scene_codes, has_vertex_color=False, resolution=resolution)
+                raw_mesh = raw_meshes[0]
+        else:
+            raw_meshes = model.extract_mesh(scene_codes, has_vertex_color=False, resolution=resolution)
+            raw_mesh = raw_meshes[0]
 
         bake_output = bake_texture(raw_mesh, model, scene_codes[0], texture_res)
         texture_img = Image.fromarray(
@@ -408,8 +485,15 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
 
 # ── Basic endpoints ───────────────────────────────────────────────────────────
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def root():
+    html_path = Path(__file__).parent / "FurnishAR.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>FurnishAR.html not found</h1>", status_code=404)
+
+@app.get("/health")
+def health():
     modes = ["single_object"]
     if SAM_READY:
         modes.append("crowded_scene")
@@ -422,9 +506,6 @@ def root():
         "pipeline_modes": modes,
     }
 
-@app.get("/health")
-def health():
-    return root()
 
 
 # ── POST /segment ─────────────────────────────────────────────────────────────
@@ -480,13 +561,36 @@ async def segment(
     })
 
 
+# ── POST /classify ────────────────────────────────────────────────────────────
+
+@app.post("/classify")
+async def classify_endpoint(file: UploadFile = File(...)):
+    if not CLIP_READY:
+        raise HTTPException(503, "Classifier model not loaded")
+    raw = await file.read()
+    try:
+        img = Image.open(io.BytesIO(raw))
+    except Exception:
+        raise HTTPException(400, "Could not decode image")
+    try:
+        img_pre = preprocess_image(img, do_remove_bg=True)
+        detected_category, detected_confidence = _classify(img_pre)
+        return JSONResponse({
+            "category": detected_category,
+            "confidence": float(detected_confidence)
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, f"Classification failed: {e}")
+
+
 # ── POST /reconstruct ─────────────────────────────────────────────────────────
 
 @app.post("/reconstruct")
 async def reconstruct(
     file:        UploadFile = File(...),
     category:    str  = Form("auto"),   # kept for backward compat; ignored (CLIP classifies)
-    resolution:  int  = Form(256),
+    resolution:  int  = Form(None),
     remove_bg:   bool = Form(True),
     texture_res: int  = Form(2048),
 ):
@@ -501,7 +605,7 @@ async def reconstruct(
     except Exception:
         raise HTTPException(400, "Could not decode image")
 
-    resolution  = max(64, min(512, int(resolution)))
+    resolution  = max(64, min(512, int(resolution if resolution is not None else MC_RESOLUTION)))
     texture_res = max(512, min(4096, int(texture_res)))
 
     # ── Preprocess ────────────────────────────────────────────────────────────
@@ -544,6 +648,17 @@ async def reconstruct(
     # Store session for /export and /qr compatibility
     v = np.array(vc_mesh.vertices)
     f = np.array(vc_mesh.faces)
+
+    # Extract per-vertex colors (RGB, 0-1 floats) from the trimesh visual
+    vertex_colors = None
+    try:
+        if hasattr(vc_mesh, 'visual') and hasattr(vc_mesh.visual, 'vertex_colors'):
+            vc = np.array(vc_mesh.visual.vertex_colors)  # (N, 4) RGBA uint8
+            vertex_colors = (vc[:, :3].astype(np.float32) / 255.0).tolist()
+            print(f"Vertex colors extracted: {len(vertex_colors)} vertices", flush=True)
+    except Exception as e:
+        print(f"Could not extract vertex colors: {e}", flush=True)
+
     sessions[session_id] = {
         "vertices": v, "faces": f,
         "mesh_obj": vc_mesh,
@@ -561,7 +676,7 @@ async def reconstruct(
                 old_glb.unlink(missing_ok=True)
             del sessions[k]
 
-    return JSONResponse({
+    resp = {
         "session_id":  session_id,
         "glb_url":     f"/static/models/{session_id}.glb",
         "category":    detected_category,
@@ -574,7 +689,11 @@ async def reconstruct(
         "faces":       f.tolist(),
         "f_score":     f"{detected_confidence:.0%}",
         "demo":        False,
-    })
+    }
+    if vertex_colors is not None:
+        resp["vertex_colors"] = vertex_colors
+
+    return JSONResponse(resp)
 
 
 # ── GET /qr/{session_id} ──────────────────────────────────────────────────────
@@ -681,7 +800,6 @@ def _viewer_html(glb_url, qr_url, category, confidence, n_vertices, n_faces, ses
       auto-rotate
       shadow-intensity="1"
       exposure="1"
-      orientation="0deg -90deg 0deg"
       style="--progress-bar-color:#a78bfa"
       alt="Reconstructed {category}">
       <button slot="ar-button" style="
@@ -785,15 +903,33 @@ if __name__ == "__main__":
                         help="Public base URL for QR codes and viewer links "
                              "(e.g. https://abc123.ngrok-free.app)")
     parser.add_argument("--port", type=int, default=8000, help="Server port")
+    parser.add_argument("--adaptive", action="store_true", default=False,
+                        help="Use adaptive marching cubes for faster mesh extraction "
+                             "(coarse-to-fine, ~2-4x speedup). Without this flag, "
+                             "standard full-grid marching cubes is used.")
+    parser.add_argument("--mc-resolution", type=int, default=256,
+                        help="Marching cubes fine grid resolution (default: 256). "
+                             "Higher = more detail but slower. Clamped to [64, 512].")
+    parser.add_argument("--mc-coarse-resolution", type=int, default=128,
+                        help="Coarse grid resolution for adaptive MC (default: 128). "
+                             "Only used with --adaptive. Should be < mc-resolution.")
     args = parser.parse_args()
 
     if args.public_url:
         PUBLIC_URL = args.public_url.rstrip("/")
+    USE_ADAPTIVE_MC = args.adaptive
+    MC_RESOLUTION = max(64, min(512, args.mc_resolution))
+    MC_COARSE_RESOLUTION = max(32, min(MC_RESOLUTION, args.mc_coarse_resolution))
 
+    if USE_ADAPTIVE_MC:
+        mc_mode = f"Adaptive (fine={MC_RESOLUTION}, coarse={MC_COARSE_RESOLUTION})"
+    else:
+        mc_mode = f"Standard (full-grid {MC_RESOLUTION}\u00b3)"
     ip = _local_ip()
     print(f"\n  Server:   http://0.0.0.0:{args.port}")
     print(f"  Local:    http://localhost:{args.port}")
     print(f"  Network:  http://{ip}:{args.port}")
+    print(f"  MC mode:  {mc_mode}")
     if PUBLIC_URL:
         print(f"  Public:   {PUBLIC_URL}")
     print(f"  Frontend: open FurnishAR.html\n")
