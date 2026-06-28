@@ -362,7 +362,24 @@ def _set_adapter(category: str):
     return None
 
 
-def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: int = 2048):
+def _normalize_category(category: str) -> str:
+    """Clamp mobile/backend category input to a known LoRA route."""
+    cleaned = (category or "").strip().lower().replace(" ", "")
+    aliases = {
+        "officechair": "swivelchair",
+        "swivelofficechair": "swivelchair",
+        "bookcase": "bookshelf",
+    }
+    cleaned = aliases.get(cleaned, cleaned)
+    return cleaned if cleaned in ADAPTER_MAP else "chair"
+
+
+def _run_inference_baked(
+    img: Image.Image,
+    resolution: int = 256,
+    texture_res: int = 2048,
+    use_adaptive_mc=None,
+):
     """
     Full pipeline:
       TripoSR encode →
@@ -378,6 +395,7 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
     import trimesh
 
     t0 = time.time()
+    use_adaptive = USE_ADAPTIVE_MC if use_adaptive_mc is None else bool(use_adaptive_mc)
 
     amp_dtype = None
     if torch.cuda.is_available() and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported():
@@ -394,7 +412,7 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
     scene_codes = scene_codes.float()
 
     # ── 1. Vertex-color mesh ──────────────────────────────────────────────
-    if USE_ADAPTIVE_MC:
+    if use_adaptive:
         try:
             from adaptive_mc import extract_mesh_adaptive
             vc_mesh = extract_mesh_adaptive(
@@ -422,7 +440,7 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
         from tsr.bake_texture import bake_texture
 
         # Extract a second mesh WITHOUT vertex colors — bake_texture needs raw geometry
-        if USE_ADAPTIVE_MC:
+        if use_adaptive:
             try:
                 from adaptive_mc import extract_mesh_adaptive
                 raw_mesh = extract_mesh_adaptive(
@@ -481,6 +499,131 @@ def _run_inference_baked(img: Image.Image, resolution: int = 256, texture_res: i
 
     elapsed = round(time.time() - t0, 2)
     return glb_bytes, vc_mesh, scene_codes, elapsed
+
+
+def _store_reconstruction_result(
+    glb_bytes: bytes,
+    vc_mesh,
+    detected_category: str,
+    detected_confidence: float,
+    elapsed: float,
+    mobile_metadata=None,
+):
+    session_id = str(uuid.uuid4())
+    glb_path = STATIC_MODELS_DIR / f"{session_id}.glb"
+    glb_path.write_bytes(glb_bytes)
+
+    v = np.array(vc_mesh.vertices)
+    f = np.array(vc_mesh.faces)
+
+    vertex_colors = None
+    try:
+        if hasattr(vc_mesh, "visual") and hasattr(vc_mesh.visual, "vertex_colors"):
+            vc = np.array(vc_mesh.visual.vertex_colors)
+            vertex_colors = (vc[:, :3].astype(np.float32) / 255.0).tolist()
+            print(f"Vertex colors extracted: {len(vertex_colors)} vertices", flush=True)
+    except Exception as e:
+        print(f"Could not extract vertex colors: {e}", flush=True)
+
+    sessions[session_id] = {
+        "vertices": v,
+        "faces": f,
+        "mesh_obj": vc_mesh,
+        "glb_path": str(glb_path),
+        "category": detected_category,
+        "confidence": detected_confidence,
+        "created": time.time(),
+    }
+    if mobile_metadata:
+        sessions[session_id]["mobile"] = mobile_metadata
+
+    if len(sessions) > 20:
+        oldest = sorted(sessions, key=lambda k: sessions[k]["created"])[:5]
+        for k in oldest:
+            old_glb = Path(sessions[k].get("glb_path", ""))
+            if old_glb.exists():
+                old_glb.unlink(missing_ok=True)
+            del sessions[k]
+
+    resp = {
+        "session_id": session_id,
+        "glb_url": f"/static/models/{session_id}.glb",
+        "viewer_url": f"/viewer/{session_id}",
+        "category": detected_category,
+        "confidence": round(float(detected_confidence), 4),
+        "n_vertices": int(len(v)),
+        "n_faces": int(len(f)),
+        "time_sec": elapsed,
+        "vertices": v.tolist(),
+        "faces": f.tolist(),
+        "f_score": f"{detected_confidence:.0%}",
+        "demo": False,
+    }
+    if vertex_colors is not None:
+        resp["vertex_colors"] = vertex_colors
+    if mobile_metadata:
+        resp["mobile"] = mobile_metadata
+    return JSONResponse(resp)
+
+
+@app.post("/mobile/reconstruct")
+async def mobile_reconstruct(
+    file: UploadFile = File(...),
+    category: str = Form(...),
+    confidence: float = Form(0.0),
+    segmentation: bool = Form(False),
+    resolution: int = Form(None),
+    texture_res: int = Form(2048),
+):
+    """Use phone-side ONNX preprocessing/classification, then reconstruct."""
+    if not TRIPOSR_READY:
+        raise HTTPException(503, "TripoSR model not loaded")
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(400, f"Expected image, got: {file.content_type}")
+
+    raw = await file.read()
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGBA")
+    except Exception:
+        raise HTTPException(400, "Could not decode image")
+
+    resolution = max(64, min(512, int(resolution if resolution is not None else MC_RESOLUTION)))
+    texture_res = max(512, min(4096, int(texture_res)))
+    detected_category = _normalize_category(category)
+    detected_confidence = max(0.0, min(1.0, float(confidence)))
+
+    active_adapter = _set_adapter(detected_category)
+    print(
+        f"Mobile category: {detected_category} ({detected_confidence:.1%}) | "
+        f"Adapter: {active_adapter} | Standard MC",
+        flush=True,
+    )
+
+    try:
+        img = preprocess_image(img, do_remove_bg=False)
+        glb_bytes, vc_mesh, scene_codes, elapsed = _run_inference_baked(
+            img,
+            resolution=resolution,
+            texture_res=texture_res,
+            use_adaptive_mc=False,
+        )
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, f"Mobile reconstruction failed: {e}")
+
+    return _store_reconstruction_result(
+        glb_bytes,
+        vc_mesh,
+        detected_category,
+        detected_confidence,
+        elapsed,
+        mobile_metadata={
+            "segmentation": bool(segmentation),
+            "adapter": active_adapter,
+            "mc_mode": "standard",
+            "client_preprocessed": True,
+        },
+    )
 
 
 # ── Basic endpoints ───────────────────────────────────────────────────────────
@@ -641,59 +784,13 @@ async def reconstruct(
         raise HTTPException(500, f"Reconstruction failed: {e}")
 
     # ── Save GLB ──────────────────────────────────────────────────────────────
-    session_id = str(uuid.uuid4())
-    glb_path = STATIC_MODELS_DIR / f"{session_id}.glb"
-    glb_path.write_bytes(glb_bytes)
-
-    # Store session for /export and /qr compatibility
-    v = np.array(vc_mesh.vertices)
-    f = np.array(vc_mesh.faces)
-
-    # Extract per-vertex colors (RGB, 0-1 floats) from the trimesh visual
-    vertex_colors = None
-    try:
-        if hasattr(vc_mesh, 'visual') and hasattr(vc_mesh.visual, 'vertex_colors'):
-            vc = np.array(vc_mesh.visual.vertex_colors)  # (N, 4) RGBA uint8
-            vertex_colors = (vc[:, :3].astype(np.float32) / 255.0).tolist()
-            print(f"Vertex colors extracted: {len(vertex_colors)} vertices", flush=True)
-    except Exception as e:
-        print(f"Could not extract vertex colors: {e}", flush=True)
-
-    sessions[session_id] = {
-        "vertices": v, "faces": f,
-        "mesh_obj": vc_mesh,
-        "glb_path": str(glb_path),
-        "category": detected_category,
-        "confidence": detected_confidence,
-        "created": time.time(),
-    }
-    # Evict oldest sessions if too many accumulate
-    if len(sessions) > 20:
-        oldest = sorted(sessions, key=lambda k: sessions[k]["created"])[:5]
-        for k in oldest:
-            old_glb = Path(sessions[k].get("glb_path", ""))
-            if old_glb.exists():
-                old_glb.unlink(missing_ok=True)
-            del sessions[k]
-
-    resp = {
-        "session_id":  session_id,
-        "glb_url":     f"/static/models/{session_id}.glb",
-        "category":    detected_category,
-        "confidence":  round(detected_confidence, 4),
-        "n_vertices":  int(len(v)),
-        "n_faces":     int(len(f)),
-        "time_sec":    elapsed,
-        # Backward compat fields for existing frontend
-        "vertices":    v.tolist(),
-        "faces":       f.tolist(),
-        "f_score":     f"{detected_confidence:.0%}",
-        "demo":        False,
-    }
-    if vertex_colors is not None:
-        resp["vertex_colors"] = vertex_colors
-
-    return JSONResponse(resp)
+    return _store_reconstruction_result(
+        glb_bytes,
+        vc_mesh,
+        detected_category,
+        detected_confidence,
+        elapsed,
+    )
 
 
 # ── GET /qr/{session_id} ──────────────────────────────────────────────────────
