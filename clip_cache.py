@@ -21,15 +21,23 @@ def _has_saved_clip_model(cache_dir: Path) -> bool:
         cache_dir / "model.safetensors",
         cache_dir / "pytorch_model.bin",
     )
+    processor_files = (
+        cache_dir / "processor_config.json",
+        cache_dir / "preprocessor_config.json",
+    )
+    tokenizer_files = (
+        cache_dir / "tokenizer.json",
+        cache_dir / "vocab.json",
+    )
     required_files = (
         cache_dir / "config.json",
-        cache_dir / "preprocessor_config.json",
         cache_dir / "tokenizer_config.json",
-        cache_dir / "vocab.json",
-        cache_dir / "merges.txt",
     )
-    return any(path.exists() for path in model_files) and all(
-        path.exists() for path in required_files
+    return (
+        any(path.exists() for path in model_files)
+        and any(path.exists() for path in processor_files)
+        and any(path.exists() for path in tokenizer_files)
+        and all(path.exists() for path in required_files)
     )
 
 
