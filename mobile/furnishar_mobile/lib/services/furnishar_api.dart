@@ -65,6 +65,7 @@ class FurnishArApi {
       'segmentation': vision.segmentationUsed.toString(),
       'resolution': resolution.toString(),
       'texture_res': textureResolution.toString(),
+      'include_geometry': 'false',
     });
 
     final streamed = await request.send().timeout(const Duration(minutes: 10));
@@ -87,6 +88,7 @@ class FurnishArApi {
     int resolution = 256,
     int textureResolution = 2048,
     bool removeBackground = true,
+    bool segmentationEnabled = false,
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -105,7 +107,9 @@ class FurnishArApi {
       'category': 'auto',
       'resolution': resolution.toString(),
       'remove_bg': removeBackground.toString(),
+      'segmentation': segmentationEnabled.toString(),
       'texture_res': textureResolution.toString(),
+      'include_geometry': 'false',
     });
 
     final streamed = await request.send().timeout(const Duration(minutes: 10));

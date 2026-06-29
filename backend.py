@@ -60,44 +60,10 @@ TEMPLATES_DIR = Path("templates")
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 EXPORT_DIR = Path(tempfile.gettempdir()) / "furnishar"
 EXPORT_DIR.mkdir(exist_ok=True)
-RECEIVED_INPUTS_DIR = Path("Received Inputs")
-RECEIVED_INPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 sessions: dict = {}
-
-
-def _safe_image_suffix(filename: str | None, default: str = ".png") -> str:
-    suffix = Path(filename or "").suffix.lower()
-    return suffix if suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp"} else default
-
-
-def _new_received_input_dir() -> Path:
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    folder = RECEIVED_INPUTS_DIR / f"{stamp}-{uuid.uuid4().hex[:8]}"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
-
-
-def _save_received_original(raw: bytes, filename: str | None) -> Path | None:
-    try:
-        folder = _new_received_input_dir()
-        original_path = folder / f"original_input{_safe_image_suffix(filename)}"
-        original_path.write_bytes(raw)
-        return folder
-    except Exception as e:
-        print(f"Could not save received input: {e}", flush=True)
-        return None
-
-
-def _save_received_removed_bg(folder: Path | None, img: Image.Image) -> None:
-    if folder is None:
-        return
-    try:
-        img.save(folder / "removed_background.png", format="PNG")
-    except Exception as e:
-        print(f"Could not save removed background image: {e}", flush=True)
 
 # ── Category / adapter constants ──────────────────────────────────────────────
 CLIP_LABELS = [
@@ -269,14 +235,12 @@ def _base_url(port: int = 8000) -> str:
 def preprocess_image(
     img: Image.Image,
     do_remove_bg: bool = False,
-    received_input_dir: Path | None = None,
 ) -> Image.Image:
     """Identical preprocessing to official run.py."""
     from tsr.utils import remove_background, resize_foreground
     img = img.convert("RGBA")
     if do_remove_bg and rembg_session is not None:
         img = remove_background(img, rembg_session)
-        _save_received_removed_bg(received_input_dir, img)
     img = resize_foreground(img, 0.85)
     if img.mode != "RGBA":
         img = img.convert("RGBA")
@@ -529,6 +493,28 @@ def _run_inference_baked(
     return glb_bytes, vc_mesh, scene_codes, elapsed
 
 
+def _warmup_pipeline():
+    """Run one small dummy reconstruction to absorb model cold-start overhead."""
+    if not TRIPOSR_READY:
+        print("Warmup skipped: TripoSR model not loaded.", flush=True)
+        return
+
+    print("Warming up reconstruction pipeline...", flush=True)
+    t0 = time.time()
+    try:
+        dummy_img = Image.new("RGB", (256, 256), color="white")
+        preprocessed = preprocess_image(dummy_img, do_remove_bg=False)
+        _run_inference_baked(
+            preprocessed,
+            resolution=128,
+            texture_res=512,
+            use_adaptive_mc=False,
+        )
+        print(f"Warmup complete in {time.time() - t0:.2f}s.", flush=True)
+    except Exception as e:
+        print(f"Warmup failed: {e}", flush=True)
+
+
 def _store_reconstruction_result(
     glb_bytes: bytes,
     vc_mesh,
@@ -617,7 +603,6 @@ async def mobile_reconstruct(
         img = Image.open(io.BytesIO(raw)).convert("RGBA")
     except Exception:
         raise HTTPException(400, "Could not decode image")
-    received_input_dir = _save_received_original(raw, file.filename)
 
     resolution = max(64, min(512, int(resolution if resolution is not None else MC_RESOLUTION)))
     texture_res = max(512, min(4096, int(texture_res)))
@@ -632,7 +617,7 @@ async def mobile_reconstruct(
     )
 
     try:
-        img = preprocess_image(img, do_remove_bg=False, received_input_dir=received_input_dir)
+        img = preprocess_image(img, do_remove_bg=False)
         glb_bytes, vc_mesh, scene_codes, elapsed = _run_inference_baked(
             img,
             resolution=resolution,
@@ -748,9 +733,8 @@ async def classify_endpoint(file: UploadFile = File(...)):
         img = Image.open(io.BytesIO(raw))
     except Exception:
         raise HTTPException(400, "Could not decode image")
-    received_input_dir = _save_received_original(raw, file.filename)
     try:
-        img_pre = preprocess_image(img, do_remove_bg=True, received_input_dir=received_input_dir)
+        img_pre = preprocess_image(img, do_remove_bg=True)
         detected_category, detected_confidence = _classify(img_pre)
         return JSONResponse({
             "category": detected_category,
@@ -782,7 +766,6 @@ async def reconstruct(
         img = Image.open(io.BytesIO(raw))
     except Exception:
         raise HTTPException(400, "Could not decode image")
-    received_input_dir = _save_received_original(raw, file.filename)
 
     resolution  = max(64, min(512, int(resolution if resolution is not None else MC_RESOLUTION)))
     texture_res = max(512, min(4096, int(texture_res)))
@@ -792,7 +775,6 @@ async def reconstruct(
         img = preprocess_image(
             img,
             do_remove_bg=remove_bg,
-            received_input_dir=received_input_dir,
         )
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -988,11 +970,9 @@ async def remove_bg_endpoint(file: UploadFile = File(...)):
         img = Image.open(io.BytesIO(raw)).convert("RGBA")
     except Exception:
         raise HTTPException(400, "Could not decode image")
-    received_input_dir = _save_received_original(raw, file.filename)
     try:
         from tsr.utils import remove_background
         img = remove_background(img, rembg_session)
-        _save_received_removed_bg(received_input_dir, img)
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         buf.seek(0)
@@ -1072,5 +1052,6 @@ if __name__ == "__main__":
     print(f"  MC mode:  {mc_mode}")
     if PUBLIC_URL:
         print(f"  Public:   {PUBLIC_URL}")
+    _warmup_pipeline()
     print(f"  Frontend: open FurnishAR.html\n")
     uvicorn.run(app, host="0.0.0.0", port=args.port)

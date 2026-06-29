@@ -189,13 +189,14 @@ class _CapturePageState extends State<CapturePage> {
         resolution: 256,
         textureResolution: 2048,
         removeBackground: true,
+        segmentationEnabled: _segmentationEnabled,
       );
       setState(() {
         _visionResult = VisionResult(
           processedImagePath: image.path,
           category: result.category,
           confidence: result.confidence,
-          segmentationUsed: false,
+          segmentationUsed: _segmentationEnabled,
         );
         _reconstruction = result;
         _stage = PipelineStage.complete;
@@ -323,7 +324,7 @@ class _SettingsPanel extends StatelessWidget {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: segmentationEnabled,
-              onChanged: null,
+              onChanged: onSegmentationChanged,
               title: const Text('MobileSAM segmentation'),
               subtitle:
                   const Text('Backend pipeline is used for release builds'),
