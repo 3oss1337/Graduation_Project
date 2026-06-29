@@ -35,7 +35,7 @@ models/clip-vit-base-patch32/
 *.ckpt
 *.safetensors
 *.h5
-*.pt
+
 
 # Generated 3D assets
 *.glb
