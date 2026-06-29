@@ -29,6 +29,7 @@ output/
 outputs/
 
 # Model weights and adapters
+models/clip-vit-base-patch32/
 *.pth
 *.ckpt
 *.safetensors

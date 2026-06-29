@@ -20,6 +20,7 @@ import torch
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from clip_cache import get_clip_model_path
 from tsr.system import TSR
 from tsr.models.transformer.lora import LoRAAdapterManager
 
@@ -104,7 +105,7 @@ def classify_image(image, candidate_labels, device):
         print("  Loading CLIP zero-shot classifier...")
         _clip_classifier = hf_pipeline(
             "zero-shot-image-classification",
-            model="openai/clip-vit-base-patch32",
+            model=get_clip_model_path(),
             device=0 if device == "cuda" else -1,
         )
 

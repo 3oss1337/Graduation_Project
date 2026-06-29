@@ -46,6 +46,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from clip_cache import get_clip_model_path
+
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="FurnishAR Backend", version="3.0.0")
 app.add_middleware(
@@ -143,13 +145,14 @@ def load_all_models():
     # ── 3. CLIP zero-shot classifier ──────────────────────────────────────────
     try:
         from transformers import pipeline as hf_pipeline
+        clip_model_path = get_clip_model_path()
         clip_classifier = hf_pipeline(
             "zero-shot-image-classification",
-            model="openai/clip-vit-base-patch32",
+            model=clip_model_path,
             device=0 if DEVICE == "cuda" else -1,
         )
         CLIP_READY = True
-        print("CLIP zero-shot classifier ready.", flush=True)
+        print(f"CLIP zero-shot classifier ready from {clip_model_path}.", flush=True)
     except Exception as e:
         print(f"CLIP load failed: {e}", flush=True)
 
@@ -494,6 +497,7 @@ def _store_reconstruction_result(
     detected_confidence: float,
     elapsed: float,
     mobile_metadata=None,
+    include_geometry: bool = True,
 ):
     session_id = str(uuid.uuid4())
     glb_path = STATIC_MODELS_DIR / f"{session_id}.glb"
@@ -540,12 +544,13 @@ def _store_reconstruction_result(
         "n_vertices": int(len(v)),
         "n_faces": int(len(f)),
         "time_sec": elapsed,
-        "vertices": v.tolist(),
-        "faces": f.tolist(),
         "f_score": f"{detected_confidence:.0%}",
         "demo": False,
     }
-    if vertex_colors is not None:
+    if include_geometry:
+        resp["vertices"] = v.tolist()
+        resp["faces"] = f.tolist()
+    if include_geometry and vertex_colors is not None:
         resp["vertex_colors"] = vertex_colors
     if mobile_metadata:
         resp["mobile"] = mobile_metadata
@@ -560,6 +565,7 @@ async def mobile_reconstruct(
     segmentation: bool = Form(False),
     resolution: int = Form(None),
     texture_res: int = Form(2048),
+    include_geometry: bool = Form(False),
 ):
     """Use phone-side ONNX preprocessing/classification, then reconstruct."""
     if not TRIPOSR_READY:
@@ -609,6 +615,7 @@ async def mobile_reconstruct(
             "mc_mode": "standard",
             "client_preprocessed": True,
         },
+        include_geometry=include_geometry,
     )
 
 
@@ -722,6 +729,7 @@ async def reconstruct(
     resolution:  int  = Form(None),
     remove_bg:   bool = Form(True),
     texture_res: int  = Form(2048),
+    include_geometry: bool = Form(True),
 ):
     if not TRIPOSR_READY:
         raise HTTPException(503, "TripoSR model not loaded")
@@ -776,6 +784,7 @@ async def reconstruct(
         detected_category,
         detected_confidence,
         elapsed,
+        include_geometry=include_geometry,
     )
 
 

@@ -17,6 +17,7 @@ from PIL import Image
 from transformers import pipeline as hf_pipeline
 
 # ── Project imports ────────────────────────────────────────────────────────────
+from clip_cache import get_clip_model_path
 from tsr.system import TSR
 from tsr.utils import remove_background, resize_foreground
 
@@ -431,7 +432,7 @@ def load_classifier():
     device = 0 if torch.cuda.is_available() else -1
     return hf_pipeline(
         "zero-shot-image-classification",
-        model="openai/clip-vit-base-patch32",
+        model=get_clip_model_path(),
         device=device,
     )
 

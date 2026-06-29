@@ -6,6 +6,8 @@ import timm
 from torchvision import transforms
 from transformers import pipeline as hf_pipeline
 
+from clip_cache import get_clip_model_path
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IMAGE_PATH = "examples + 3D lora output/Chair1.png"
@@ -40,10 +42,11 @@ def load_image(path):
         return Image.fromarray(np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8))
 
 def benchmark_clip(image, device):
-    print(f"\n[CLIP] Loading Model (openai/clip-vit-base-patch32)...")
+    clip_model_path = get_clip_model_path()
+    print(f"\n[CLIP] Loading Model ({clip_model_path})...")
     clip_pipeline = hf_pipeline(
         "zero-shot-image-classification",
-        model="openai/clip-vit-base-patch32",
+        model=clip_model_path,
         device=0 if device == "cuda" else -1,
     )
     
