@@ -374,6 +374,22 @@ def _normalize_category(category: str) -> str:
     return cleaned if cleaned in ADAPTER_MAP else "chair"
 
 
+def _apply_ar_upright_orientation(mesh):
+    """Bake the reconstructed mesh into an upright, floor-aligned AR pose."""
+    import trimesh
+
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+
+    bounds = np.asarray(mesh.bounds)
+    if bounds.shape == (2, 3) and np.isfinite(bounds).all():
+        center_x = float((bounds[0, 0] + bounds[1, 0]) * 0.5)
+        center_z = float((bounds[0, 2] + bounds[1, 2]) * 0.5)
+        min_y = float(bounds[0, 1])
+        mesh.apply_translation([-center_x, -min_y, -center_z])
+    return mesh
+
+
 def _run_inference_baked(
     img: Image.Image,
     resolution: int = 256,
@@ -432,6 +448,7 @@ def _run_inference_baked(
         vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)
         vc_mesh = vc_meshes[0]
         print(f"Standard MC (vertex-color): {len(vc_mesh.vertices):,} verts, {len(vc_mesh.faces):,} faces", flush=True)
+    _apply_ar_upright_orientation(vc_mesh)
 
     # ── 2. Try texture-baked GLB for model-viewer / AR
     glb_bytes = None
@@ -484,6 +501,7 @@ def _run_inference_baked(
                 visual=vis,
                 process=False,
             )
+            _apply_ar_upright_orientation(textured)
             buf = io.BytesIO()
             textured.export(buf, file_type="glb")
             glb_bytes = buf.getvalue()
