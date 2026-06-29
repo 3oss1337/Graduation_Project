@@ -19,7 +19,7 @@ import UIKit
       case "runPipeline":
         result(FlutterError(
           code: "onnx_not_configured",
-          message: "iOS ONNX Runtime sessions are scaffolded but not wired. Add onnxruntime-objc or onnxruntime-c and implement MobileSAM, rembg, and MobileNetV4-small inference here.",
+          message: "iOS ONNX Runtime sessions are scaffolded but not wired. Add onnxruntime-objc or onnxruntime-c and implement MobileSAM, rembg, and CLIP image/text inference here.",
           details: nil
         ))
       default:
@@ -36,8 +36,12 @@ import UIKit
       "mobile_sam_encoder",
       "mobile_sam_decoder",
       "rembg",
-      "mobilenetv4_small"
+      "clip_image_encoder",
+      "clip_text_embeddings"
     ]
-    return names.allSatisfy { Bundle.main.path(forResource: $0, ofType: "onnx") != nil }
+    return names.allSatisfy { name in
+      let type = name == "clip_text_embeddings" ? "json" : "onnx"
+      return Bundle.main.path(forResource: name, ofType: type) != nil
+    }
   }
 }

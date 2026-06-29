@@ -5,6 +5,9 @@
     <application
         android:label="FurnishAR"
         android:usesCleartextTraffic="true">
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

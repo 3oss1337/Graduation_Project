@@ -26,7 +26,7 @@ class OnDeviceVisionService {
     );
 
     if (result == null) {
-      throw const PlatformException(
+      throw PlatformException(
         code: 'empty_result',
         message: 'Native ONNX pipeline returned no result.',
       );

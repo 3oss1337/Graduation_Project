@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,7 +8,96 @@ import 'package:url_launcher/url_launcher.dart';
 import 'models/reconstruction_result.dart';
 import 'models/vision_result.dart';
 import 'services/furnishar_api.dart';
-import 'services/on_device_vision_service.dart';
+
+class AppTheme {
+  static const background = Color(0xFF080A1F);
+  static const surface = Color(0xFF11142D);
+  static const surfaceAlt = Color(0xFF191C3A);
+  static const primary = Color(0xFF7B61FF);
+  static const secondary = Color(0xFF00D1FF);
+  static const error = Color(0xFFFF6B9A);
+  static const errorContainer = Color(0xFF3B1728);
+  static const outline = Color(0xFF2B2F55);
+  static const text = Color(0xFFF7F7FB);
+  static const textMuted = Color(0xFFA8ABC7);
+
+  static ThemeData dark() {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: primary,
+      brightness: Brightness.dark,
+      primary: primary,
+      secondary: secondary,
+      surface: surface,
+      error: error,
+    );
+
+    return ThemeData(
+      colorScheme: scheme,
+      scaffoldBackgroundColor: background,
+      useMaterial3: true,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: text,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
+      cardTheme: CardThemeData(
+        color: surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: const BorderSide(color: outline),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: surfaceAlt,
+        prefixIconColor: textMuted,
+        labelStyle: const TextStyle(color: textMuted),
+        hintStyle: const TextStyle(color: textMuted),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: outline),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: primary, width: 1.5),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: outline),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: surfaceAlt,
+          disabledForegroundColor: textMuted,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) ? secondary : textMuted,
+        ),
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? secondary.withValues(alpha: 0.28)
+              : surfaceAlt,
+        ),
+      ),
+      textTheme: Typography.whiteCupertino.apply(
+        bodyColor: text,
+        displayColor: text,
+      ),
+      iconTheme: const IconThemeData(color: textMuted),
+      dividerColor: outline,
+    );
+  }
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,14 +112,7 @@ class FurnishArApp extends StatelessWidget {
     return MaterialApp(
       title: 'FurnishAR',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4FD1A5),
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF0A0C0F),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.dark(),
       home: const CapturePage(),
     );
   }
@@ -55,8 +136,8 @@ class CapturePage extends StatefulWidget {
 
 class _CapturePageState extends State<CapturePage> {
   final _picker = ImagePicker();
-  final _vision = OnDeviceVisionService();
-  final _backendController = TextEditingController(text: 'http://127.0.0.1:8000');
+  final _backendController =
+      TextEditingController(text: 'http://10.0.2.2:8000');
 
   XFile? _capturedImage;
   VisionResult? _visionResult;
@@ -66,7 +147,8 @@ class _CapturePageState extends State<CapturePage> {
   bool _busy = false;
   String? _error;
 
-  FurnishArApi get _api => FurnishArApi(baseUrl: _backendController.text.trim());
+  FurnishArApi get _api =>
+      FurnishArApi(baseUrl: _backendController.text.trim());
 
   @override
   void dispose() {
@@ -101,29 +183,22 @@ class _CapturePageState extends State<CapturePage> {
     });
 
     try {
-      final vision = await _vision.runPipeline(
-        imagePath: image.path,
-        segmentationEnabled: _segmentationEnabled,
-      );
-      setState(() {
-        _visionResult = vision;
-        _stage = PipelineStage.upload;
-      });
-
       setState(() => _stage = PipelineStage.reconstruct);
-      final result = await _api.reconstruct(
-        vision: vision,
+      final result = await _api.reconstructWithBackendVision(
+        imagePath: image.path,
         resolution: 256,
         textureResolution: 2048,
+        removeBackground: true,
       );
       setState(() {
+        _visionResult = VisionResult(
+          processedImagePath: image.path,
+          category: result.category,
+          confidence: result.confidence,
+          segmentationUsed: false,
+        );
         _reconstruction = result;
         _stage = PipelineStage.complete;
-      });
-    } on PlatformException catch (e) {
-      setState(() {
-        _error = e.message ?? e.code;
-        _stage = PipelineStage.idle;
       });
     } catch (e) {
       setState(() {
@@ -248,9 +323,10 @@ class _SettingsPanel extends StatelessWidget {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: segmentationEnabled,
-              onChanged: onSegmentationChanged,
+              onChanged: null,
               title: const Text('MobileSAM segmentation'),
-              subtitle: const Text('rembg still runs regardless'),
+              subtitle:
+                  const Text('Backend pipeline is used for release builds'),
               secondary: const Icon(Icons.auto_fix_high_outlined),
             ),
           ],
@@ -271,9 +347,9 @@ class _ImagePanel extends StatelessWidget {
       aspectRatio: 4 / 3,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFF111318),
+          color: AppTheme.surfaceAlt,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white10),
+          border: Border.all(color: AppTheme.outline),
         ),
         child: image == null
             ? const Center(
@@ -354,12 +430,15 @@ class _StepChip extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color),
-        color: active ? scheme.primary.withOpacity(0.14) : Colors.transparent,
+        color: active
+            ? scheme.primary.withValues(alpha: 0.14)
+            : Colors.transparent,
       ),
       child: Text(
         label,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+        style:
+            TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -393,10 +472,10 @@ class _ErrorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFF351719),
+      color: AppTheme.errorContainer,
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Text(message, style: const TextStyle(color: Color(0xFFFFB4AB))),
+        child: Text(message, style: const TextStyle(color: AppTheme.error)),
       ),
     );
   }
@@ -432,7 +511,7 @@ class _ViewerPanel extends StatelessWidget {
                     arModes: const ['webxr', 'scene-viewer', 'quick-look'],
                     autoRotate: true,
                     cameraControls: true,
-                    backgroundColor: const Color(0xFF0A0C0F),
+                    backgroundColor: AppTheme.background,
                   ),
           ),
           if (result case final r?)

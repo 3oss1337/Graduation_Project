@@ -17,7 +17,7 @@ class MainActivity : FlutterActivity() {
                         result.error(
                             "onnx_not_configured",
                             "Android ONNX Runtime sessions are scaffolded but not wired. " +
-                                "Add onnxruntime-android and implement MobileSAM, rembg, and MobileNetV4-small inference here.",
+                                "Add onnxruntime-android and implement MobileSAM, rembg, and CLIP image/text inference here.",
                             null
                         )
                     }
@@ -31,7 +31,8 @@ class MainActivity : FlutterActivity() {
             "flutter_assets/assets/models/mobile_sam_encoder.onnx",
             "flutter_assets/assets/models/mobile_sam_decoder.onnx",
             "flutter_assets/assets/models/rembg.onnx",
-            "flutter_assets/assets/models/mobilenetv4_small.onnx"
+            "flutter_assets/assets/models/clip_image_encoder.onnx",
+            "flutter_assets/assets/models/clip_text_embeddings.json"
         )
         return required.all { asset ->
             try {

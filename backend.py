@@ -97,8 +97,7 @@ ADAPTER_DIR     = Path("adapters")
 model          = None
 adapter_manager = None
 sam_predictor  = None
-mobilenet_model = None
-mobilenet_transform = None
+clip_classifier = None
 rembg_session  = None
 DEVICE         = "cpu"
 TRIPOSR_READY  = False
@@ -111,7 +110,7 @@ MC_COARSE_RESOLUTION = 128  # coarse grid resolution, set via --mc-coarse-resolu
 
 # ── Startup — load everything once ───────────────────────────────────────────
 def load_all_models():
-    global model, adapter_manager, sam_predictor, mobilenet_model, mobilenet_transform
+    global model, adapter_manager, sam_predictor, clip_classifier
     global rembg_session, DEVICE, TRIPOSR_READY, SAM_READY, CLIP_READY
 
     import torch
@@ -141,24 +140,18 @@ def load_all_models():
     except Exception as e:
         print(f"SAM load failed: {e}", flush=True)
 
-    # ── 3. MobileNetV4 Lite ───────────────────────────────────────────────────
+    # ── 3. CLIP zero-shot classifier ──────────────────────────────────────────
     try:
-        import timm
-        from torchvision import transforms
-        mobilenet_model = timm.create_model('mobilenetv4_conv_small', pretrained=True)
-        mobilenet_model.to(DEVICE)
-        mobilenet_model.eval()
-
-        mobilenet_transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+        from transformers import pipeline as hf_pipeline
+        clip_classifier = hf_pipeline(
+            "zero-shot-image-classification",
+            model="openai/clip-vit-base-patch32",
+            device=0 if DEVICE == "cuda" else -1,
+        )
         CLIP_READY = True
-        print("MobileNetV4 Lite ready.", flush=True)
+        print("CLIP zero-shot classifier ready.", flush=True)
     except Exception as e:
-        print(f"MobileNetV4 load failed: {e}", flush=True)
+        print(f"CLIP load failed: {e}", flush=True)
 
     # ── 4. TripoSR + LoRA ─────────────────────────────────────────────────────
     try:
@@ -311,42 +304,17 @@ def _img_to_b64(img: Image.Image, fmt="PNG") -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-# Hardcoded ImageNet index mappings to our furniture categories
-IMAGENET_FURNITURE_MAPPING = {
-    "chair":       [423, 559, 765, 857],  # barber chair, folding chair, rocking chair, throne
-    "bench":       [703],                 # park bench
-    "table":       [532],                 # dining table
-    "desk":        [514],                 # desk
-    "sofa":        [805, 831],            # sofa, studio couch
-    "stool":       [831],                 # fallback to studio couch/daybed
-    "bed":         [823, 427, 512],      # four-poster bed, cradle, crib
-    "wardrobe":    [894],                 # wardrobe
-    "cabinet":     [490, 553, 646],      # china cabinet, file cabinet, medicine chest
-    "bookshelf":   [456],                 # bookcase
-    "swivelchair": [423],                 # fallback to chair index
-}
-
 def _classify(img: Image.Image):
-    """Run MobileNetV4 Lite, return (category_str, confidence_float)."""
-    import torch
-    
-    img_tensor = mobilenet_transform(img.convert("RGB")).unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        logits = mobilenet_model(img_tensor)
-        probabilities = torch.softmax(logits, dim=1)[0]
-        
+    """Run CLIP zero-shot classification, return (category_str, confidence_float)."""
+    results = clip_classifier(img.convert("RGB"), candidate_labels=CLIP_LABELS)
     category_scores = {}
-    for cat in IMAGENET_FURNITURE_MAPPING.keys():
-        indices = IMAGENET_FURNITURE_MAPPING[cat]
-        score = sum(probabilities[idx].item() for idx in indices)
-        category_scores[cat] = score
-        
+    for item in results:
+        category = LABEL_TO_CATEGORY.get(item["label"], item["label"])
+        category_scores[category] = float(item["score"])
+
     best_category = max(category_scores, key=category_scores.get)
     best_score = category_scores[best_category]
-    
-    if best_score < 0.01:
-        return "chair", 0.0
-        
+
     return best_category, best_score
 
 
