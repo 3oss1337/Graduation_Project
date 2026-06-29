@@ -388,6 +388,15 @@
       display: block
     }
 
+    .nav-avatar-menu::before {
+      content: '';
+      position: absolute;
+      top: -10px;
+      left: 0;
+      right: 0;
+      height: 10px
+    }
+
     .nav-avatar-item {
       display: block;
       padding: .55rem .8rem;
@@ -1200,37 +1209,6 @@
       text-align: right
     }
 
-    .detected-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      padding: .6rem .8rem;
-      border-radius: 6px;
-      font-size: .85rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      border: 1px solid var(--border);
-      background: var(--bg3);
-      color: var(--text);
-      transition: all 0.25s ease;
-    }
-    .detected-badge.loading {
-      border-color: var(--gold);
-      background: rgba(232, 201, 122, 0.05);
-      color: var(--gold);
-    }
-    .detected-badge.success {
-      border-color: var(--accent);
-      background: rgba(79, 209, 165, 0.05);
-      color: var(--accent);
-    }
-    .detected-badge.error {
-      border-color: var(--red);
-      background: rgba(240, 107, 107, 0.05);
-      color: var(--red);
-    }
-
     /* toggle */
     .toggle-row {
       display: flex;
@@ -1462,10 +1440,17 @@
       aspect-ratio: 16/10
     }
 
-    #three-canvas {
+    #three-canvas,
+    #textured-glb-viewer {
       width: 100% !important;
       height: 100% !important;
       display: block
+    }
+
+    #textured-glb-viewer {
+      background: #060810;
+      --poster-color: #060810;
+      border: 0
     }
 
     .viewer-placeholder {
@@ -2352,6 +2337,25 @@
       font-family: 'Syne', sans-serif;
       margin-top: .5rem
     }
+    .detected-badge {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+      font-weight: 500;
+    }
+    .detected-badge.loading {
+      background: var(--surface);
+      color: var(--text2);
+    }
+    .detected-badge.success {
+      background: rgba(79, 209, 165, 0.15);
+      color: var(--accent);
+    }
+    .detected-badge.error {
+      background: rgba(240, 107, 107, 0.15);
+      color: var(--red);
+    }
   </style>
 </head>
 
@@ -2365,10 +2369,152 @@
     <div class="nav-links">
       <a href="#app-section">Try It</a>
 
+      <!-- CATEGORIES DROPDOWN -->
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-trigger">
+          Categories
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <div class="nav-dropdown-menu">
 
+          <div class="ndrop-card" onclick="selectCategory('chair');closeDropdown()">
+            <div class="ndrop-icon" style="background:rgba(79,209,165,0.1)">
+              <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
+                <rect x="3" y="3" width="16" height="11" rx="2" fill="none" stroke="#4FD1A5" stroke-width="1.5" />
+                <rect x="3" y="12" width="16" height="4" rx="1" fill="none" stroke="#4FD1A5" stroke-width="1.5" />
+                <line x1="5" y1="16" x2="4" y2="24" stroke="#4FD1A5" stroke-width="1.5" stroke-linecap="round" />
+                <line x1="17" y1="16" x2="18" y2="24" stroke="#4FD1A5" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div class="ndrop-text">
+              <div class="ndrop-name">Chair</div>
+              <div class="ndrop-meta">
+                <div class="ndrop-bar">
+                  <div class="ndrop-bar-fill" style="width:82%;background:#4FD1A5"></div>
+                </div>
+                <span class="ndrop-score" style="color:#4FD1A5">82%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ndrop-card" onclick="selectCategory('sofa');closeDropdown()">
+            <div class="ndrop-icon" style="background:rgba(232,201,122,0.1)">
+              <svg width="28" height="20" viewBox="0 0 28 20" fill="none">
+                <rect x="1" y="5" width="3" height="10" rx="1.5" fill="none" stroke="#E8C97A" stroke-width="1.5" />
+                <rect x="24" y="5" width="3" height="10" rx="1.5" fill="none" stroke="#E8C97A" stroke-width="1.5" />
+                <rect x="4" y="1" width="20" height="8" rx="2" fill="none" stroke="#E8C97A" stroke-width="1.5" />
+                <rect x="4" y="9" width="20" height="5" rx="1.5" fill="none" stroke="#E8C97A" stroke-width="1.5" />
+                <line x1="7" y1="14" x2="6" y2="19" stroke="#E8C97A" stroke-width="1.5" stroke-linecap="round" />
+                <line x1="21" y1="14" x2="22" y2="19" stroke="#E8C97A" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div class="ndrop-text">
+              <div class="ndrop-name">Sofa / Couch</div>
+              <div class="ndrop-meta">
+                <div class="ndrop-bar">
+                  <div class="ndrop-bar-fill" style="width:74%;background:#E8C97A"></div>
+                </div>
+                <span class="ndrop-score" style="color:#E8C97A">74%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ndrop-card" onclick="selectCategory('table');closeDropdown()">
+            <div class="ndrop-icon" style="background:rgba(167,139,250,0.1)">
+              <svg width="28" height="22" viewBox="0 0 28 22" fill="none">
+                <rect x="2" y="7" width="24" height="4" rx="1.5" fill="none" stroke="#A78BFA" stroke-width="1.5" />
+                <line x1="6" y1="11" x2="5" y2="21" stroke="#A78BFA" stroke-width="1.5" stroke-linecap="round" />
+                <line x1="22" y1="11" x2="23" y2="21" stroke="#A78BFA" stroke-width="1.5" stroke-linecap="round" />
+                <line x1="9" y1="11" x2="8" y2="21" stroke="#A78BFA" stroke-width="1.2" stroke-linecap="round"
+                  opacity=".5" />
+                <line x1="19" y1="11" x2="20" y2="21" stroke="#A78BFA" stroke-width="1.2" stroke-linecap="round"
+                  opacity=".5" />
+              </svg>
+            </div>
+            <div class="ndrop-text">
+              <div class="ndrop-name">Table</div>
+              <div class="ndrop-meta">
+                <div class="ndrop-bar">
+                  <div class="ndrop-bar-fill" style="width:79%;background:#A78BFA"></div>
+                </div>
+                <span class="ndrop-score" style="color:#A78BFA">79%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ndrop-card" onclick="selectCategory('cabinet');closeDropdown()">
+            <div class="ndrop-icon" style="background:rgba(249,115,22,0.1)">
+              <svg width="20" height="26" viewBox="0 0 20 26" fill="none">
+                <rect x="2" y="2" width="16" height="22" rx="2" fill="none" stroke="#F97316" stroke-width="1.5" />
+                <line x1="2" y1="10" x2="18" y2="10" stroke="#F97316" stroke-width="1" opacity=".5" />
+                <line x1="2" y1="18" x2="18" y2="18" stroke="#F97316" stroke-width="1" opacity=".5" />
+                <circle cx="7" cy="6" r="1.2" fill="#F97316" opacity=".7" />
+                <circle cx="13" cy="6" r="1.2" fill="#F97316" opacity=".7" />
+                <circle cx="7" cy="14" r="1.2" fill="#F97316" opacity=".6" />
+                <circle cx="13" cy="14" r="1.2" fill="#F97316" opacity=".6" />
+              </svg>
+            </div>
+            <div class="ndrop-text">
+              <div class="ndrop-name">Cabinet</div>
+              <div class="ndrop-meta">
+                <div class="ndrop-bar">
+                  <div class="ndrop-bar-fill" style="width:68%;background:#F97316"></div>
+                </div>
+                <span class="ndrop-score" style="color:#F97316">68%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ndrop-card" onclick="selectCategory('bed');closeDropdown()">
+            <div class="ndrop-icon" style="background:rgba(56,189,248,0.1)">
+              <svg width="28" height="20" viewBox="0 0 28 20" fill="none">
+                <rect x="2" y="2" width="24" height="7" rx="2" fill="none" stroke="#38BDF8" stroke-width="1.5" />
+                <rect x="2" y="9" width="24" height="6" rx="1.5" fill="none" stroke="#38BDF8" stroke-width="1.5" />
+                <rect x="4" y="3" width="8" height="4" rx="1.5" fill="none" stroke="#38BDF8" stroke-width="1"
+                  opacity=".6" />
+                <rect x="16" y="3" width="8" height="4" rx="1.5" fill="none" stroke="#38BDF8" stroke-width="1"
+                  opacity=".6" />
+                <line x1="5" y1="15" x2="4" y2="19" stroke="#38BDF8" stroke-width="1.5" stroke-linecap="round" />
+                <line x1="23" y1="15" x2="24" y2="19" stroke="#38BDF8" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div class="ndrop-text">
+              <div class="ndrop-name">Bed</div>
+              <div class="ndrop-meta">
+                <div class="ndrop-bar">
+                  <div class="ndrop-bar-fill" style="width:77%;background:#38BDF8"></div>
+                </div>
+                <span class="ndrop-score" style="color:#38BDF8">77%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ndrop-card" onclick="selectCategory('lamp');closeDropdown()">
+            <div class="ndrop-icon" style="background:rgba(251,191,36,0.1)">
+              <svg width="18" height="28" viewBox="0 0 18 28" fill="none">
+                <path d="M3 10 Q3 3 9 2 Q15 3 15 10 Z" fill="none" stroke="#FBBF24" stroke-width="1.5" />
+                <ellipse cx="9" cy="10" rx="6" ry="2" fill="none" stroke="#FBBF24" stroke-width="1.2" />
+                <line x1="9" y1="12" x2="9" y2="23" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" />
+                <ellipse cx="9" cy="24" rx="5" ry="2" fill="none" stroke="#FBBF24" stroke-width="1.5" />
+              </svg>
+            </div>
+            <div class="ndrop-text">
+              <div class="ndrop-name">Lamp</div>
+              <div class="ndrop-meta">
+                <div class="ndrop-bar">
+                  <div class="ndrop-bar-fill" style="width:71%;background:#FBBF24"></div>
+                </div>
+                <span class="ndrop-score" style="color:#FBBF24">71%</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
 
       <a href="#how-it-works">How It Works</a>
-      <a href="#results">Results</a>
       <a href="#" onclick="openAbout();return false">About</a>
     </div>
     <div class="nav-right">
@@ -2406,7 +2552,6 @@
     </div>
     <div class="hero-stats">
       <div class="hstat"><span class="hstat-val">~4s</span><span class="hstat-lbl">Per model</span></div>
-      <div class="hstat"><span class="hstat-val">78%</span><span class="hstat-lbl">Accuracy</span></div>
       <div class="hstat"><span class="hstat-val">OBJ+GLB</span><span class="hstat-lbl">Export formats</span></div>
       <div class="hstat"><span class="hstat-val">5</span><span class="hstat-lbl">Furniture types</span></div>
     </div>
@@ -2454,11 +2599,7 @@
         <h2 class="section-title">Generate your 3D model</h2>
       </div>
 
-      <!-- TAB NAV -->
-      <div class="tab-nav">
-        <button class="tab-btn active" onclick="switchTab('reconstruct',this)">3D Reconstruction</button>
-        <button class="tab-btn" onclick="switchTab('room',this)">Place in Room</button>
-      </div>
+
 
       <!-- TAB: 3D RECONSTRUCTION -->
       <div class="tab-panel active" id="tab-reconstruct">
@@ -2490,6 +2631,14 @@
             <div class="sidebar-section">
               <div class="sidebar-title">Settings</div>
 
+              <!-- Detected Category -->
+              <div class="field">
+                <label>Detected Category <span id="detected-badge" class="detected-badge" style="display:none"></span></label>
+                <div style="display: flex; align-items: center; background: var(--bg3); padding: 8px 12px; border-radius: var(--r2); border: 1px solid var(--border);">
+                  <span id="detected-text" style="color: var(--text); font-size: 0.85rem; text-transform: capitalize;">None</span>
+                </div>
+              </div>
+
               <!-- Pipeline mode -->
               <div class="field">
                 <label>Pipeline mode</label>
@@ -2515,22 +2664,7 @@
                 <div class="mode-hint" id="mode-hint">Direct reconstruction — one object in frame.</div>
               </div>
 
-              <div class="field" style="display:none">
-                <label>Furniture category</label>
-                <select id="category">
-                  <option value="chair">Chair</option>
-                  <option value="sofa">Sofa / Couch</option>
-                  <option value="table">Table</option>
-                  <option value="cabinet">Cabinet / Wardrobe</option>
-                  <option value="bed">Bed</option>
-                  <option value="lamp">Lamp</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div class="field" id="detected-category-field" style="display:none">
-                <label>Detected Category</label>
-                <div class="detected-badge" id="detected-category-badge">—</div>
-              </div>
+
               <div class="field">
                 <label>Mesh resolution</label>
                 <div class="range-row">
@@ -2548,9 +2682,13 @@
                   <span class="color-label" id="color-label">#4FD1A5</span>
                 </div>
               </div>
-              <div class="toggle-row" id="bg-toggle-row">
+              <div class="toggle-row">
                 <span>Remove background</span>
                 <div class="tog on" id="tog-bg"></div>
+              </div>
+              <div class="toggle-row">
+                <span>Bake Texture (Slower but better AR)</span>
+                <div class="tog on" id="tog-bake"></div>
               </div>
               <div class="toggle-row">
                 <span>Wireframe overlay</span>
@@ -2577,29 +2715,6 @@
                 </svg>
                 Generate 3D Model
               </button>
-              <div id="stats-wrap" style="display:none">
-                <div class="stats-card">
-                  <div class="stats-row">
-                    <div class="stat-item">
-                      <div class="stat-v" id="sv-verts">—</div>
-                      <div class="stat-l">Vertices</div>
-                    </div>
-                    <div class="stat-item">
-                      <div class="stat-v" id="sv-faces">—</div>
-                      <div class="stat-l">Faces</div>
-                    </div>
-                    <div class="stat-item">
-                      <div class="stat-v" id="sv-time">—</div>
-                      <div class="stat-l">Time</div>
-                    </div>
-                    <div class="stat-item">
-                      <div class="stat-v" id="sv-score">—</div>
-                      <div class="stat-l">F-Score</div>
-                    </div>
-                  </div>
-                  <div class="mode-badge demo" id="mode-badge">Demo mesh</div>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -2607,6 +2722,11 @@
           <div class="viewer-wrap">
             <div class="viewer-box" id="viewer-box">
               <canvas id="three-canvas" style="display:none"></canvas>
+              <model-viewer id="textured-glb-viewer"
+                camera-controls auto-rotate shadow-intensity="1" exposure="1"
+                style="display:none;--progress-bar-color:var(--accent)"
+                alt="Textured reconstructed furniture">
+              </model-viewer>
               <div class="viewer-placeholder" id="viewer-ph">
                 <svg width="56" height="56" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1">
                   <path d="M32 4 L58 18 L58 46 L32 60 L6 46 L6 18 Z" />
@@ -2667,7 +2787,8 @@
                 <span class="ar-badge">NEW</span>
               </h4>
               <model-viewer class="ar-model-viewer" id="ar-model-viewer" ar ar-modes="webxr scene-viewer quick-look"
-                camera-controls auto-rotate shadow-intensity="1" exposure="1" style="--progress-bar-color:var(--accent)"
+                camera-controls auto-rotate shadow-intensity="1" exposure="0.75" environment-image="neutral" orientation="0deg -90deg 0deg"
+                style="--progress-bar-color:var(--accent)"
                 alt="Reconstructed furniture">
                 <button slot="ar-button" style="
                 position:absolute;bottom:12px;right:12px;
@@ -2701,124 +2822,7 @@
       </div>
 
       <!-- TAB: PLACE IN ROOM -->
-      <div class="tab-panel" id="tab-room">
-        <div class="room-layout">
-          <div class="app-sidebar">
 
-            <div class="sidebar-section">
-              <div class="sidebar-title">Furniture source</div>
-
-              <!-- Use 3D Model button -->
-              <button class="use3d-btn" id="use3d-btn" onclick="use3DModel()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
-                Use Generated 3D Model
-                <span class="use3d-badge" id="use3d-badge">No model yet</span>
-              </button>
-
-              <div class="room-or">— or upload a photo —</div>
-
-              <div class="upload-zone" id="room-furn-zone">
-                <input type="file" id="room-furn-input" accept="image/*" />
-                <div class="upload-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                </div>
-                <h4>Upload furniture</h4>
-                <p>Any angle, any background</p>
-              </div>
-              <div id="furn-preview" style="display:none;margin-top:.6rem;border-radius:6px;overflow:hidden">
-                <img id="furn-img" style="width:100%;max-height:100px;object-fit:cover" src="" alt="" />
-              </div>
-              <!-- active source indicator -->
-              <div id="furn-source-label"
-                style="display:none;margin-top:.5rem;font-size:.7rem;color:var(--accent);letter-spacing:.04em"></div>
-            </div>
-
-            <div class="sidebar-section">
-              <div class="sidebar-title">Room photo</div>
-              <div class="upload-zone" id="room-bg-zone">
-                <input type="file" id="room-bg-input" accept="image/*" />
-                <div class="upload-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                    <polyline points="9 22 9 12 15 12 15 22" />
-                  </svg>
-                </div>
-                <h4>Upload room</h4>
-                <p>Living room, bedroom, office…</p>
-              </div>
-              <div id="room-preview" style="display:none;margin-top:.6rem;border-radius:6px;overflow:hidden">
-                <img id="room-img" style="width:100%;max-height:100px;object-fit:cover" src="" alt="" />
-              </div>
-            </div>
-
-            <div class="sidebar-section">
-              <div class="sidebar-title">Position</div>
-              <div class="field">
-                <label>Size <span id="scale-val" style="color:var(--accent)">35%</span></label>
-                <input type="range" id="r-scale" min="10" max="70" step="1" value="35" />
-              </div>
-              <div class="field">
-                <label>Left / Right <span id="rx-val" style="color:var(--accent)">50%</span></label>
-                <input type="range" id="r-x" min="0" max="100" step="1" value="50" />
-              </div>
-              <div class="field">
-                <label>Floor position <span id="ry-val" style="color:var(--accent)">78%</span></label>
-                <input type="range" id="r-y" min="10" max="100" step="1" value="78" />
-              </div>
-              <div class="field">
-                <label>Rotation <span id="rot-val" style="color:var(--accent)">0°</span></label>
-                <input type="range" id="r-rot" min="-180" max="180" step="1" value="0" />
-              </div>
-              <button class="gen-btn" id="room-btn" style="margin-top:.5rem" onclick="placeInRoom()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <polyline points="21 15 16 10 5 21" />
-                </svg>
-                Place in Room
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <div
-              style="background:#060810;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;min-height:400px;display:flex;align-items:center;justify-content:center;position:relative"
-              id="room-result-wrap">
-              <div style="text-align:center;color:var(--text3)">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"
-                  style="opacity:.2;margin-bottom:.75rem">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                </svg>
-                <p style="font-size:.8rem;letter-spacing:.04em">Choose a furniture source and upload a room photo</p>
-              </div>
-              <canvas id="room-canvas"
-                style="display:none;width:100%;height:auto;border-radius:var(--r);cursor:grab"></canvas>
-              <div id="room-drag-hint"
-                style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:.65rem;color:var(--text3);letter-spacing:.05em;pointer-events:none;white-space:nowrap;background:rgba(6,8,16,0.7);padding:4px 12px;border-radius:100px;backdrop-filter:blur(4px)">
-                Drag to move · Scroll to rotate</div>
-            </div>
-            <div style="margin-top:.75rem;display:flex;justify-content:flex-end">
-              <button class="exp-btn primary" id="room-dl" aria-disabled="true" onclick="downloadRoom()"
-                style="font-size:.8rem">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                Save Image
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
     </div>
     </div>
@@ -2891,48 +2895,6 @@
     </div>
   </section>
 
-  <!-- RESULTS -->
-  <section id="results">
-    <div class="container">
-      <div class="section-label">Experimental Results</div>
-      <h2 class="section-title">Accuracy by furniture type</h2>
-      <p class="section-sub">Evaluated on 120 furniture images using Chamfer Distance and F-Score metrics.</p>
-      <div class="results-grid">
-        <div class="result-card">
-          <div class="result-val">82%</div>
-          <div class="result-lbl">F-Score</div>
-          <div class="result-sub">Chair</div>
-        </div>
-        <div class="result-card">
-          <div class="result-val">79%</div>
-          <div class="result-lbl">F-Score</div>
-          <div class="result-sub">Table</div>
-        </div>
-        <div class="result-card">
-          <div class="result-val">77%</div>
-          <div class="result-lbl">F-Score</div>
-          <div class="result-sub">Bed</div>
-        </div>
-        <div class="result-card">
-          <div class="result-val">74%</div>
-          <div class="result-lbl">F-Score</div>
-          <div class="result-sub">Sofa</div>
-        </div>
-        <div class="result-card">
-          <div class="result-val">68%</div>
-          <div class="result-lbl">F-Score</div>
-          <div class="result-sub">Cabinet</div>
-        </div>
-        <div class="result-card" style="border-color:rgba(79,209,165,0.3)">
-          <div class="result-val" style="color:var(--accent)">78.4%</div>
-          <div class="result-lbl">Average</div>
-          <div class="result-sub">All categories</div>
-        </div>
-      </div>
-      <p style="margin-top:1.5rem;font-size:.8rem;color:var(--text3)">TripoSR outperforms One-2-3-45 baseline by ~11% on
-        the furniture domain. Background removal improves accuracy by ~18% on average.</p>
-    </div>
-  </section>
 
   <!-- CATEGORY CARDS -->
   <section id="categories" style="background:var(--bg2);border-top:1px solid var(--border)">
@@ -3374,46 +3336,41 @@
           <h4>The Team</h4>
           <div class="about-team">
             <div class="team-card">
-              <div class="team-avatar" style="background:#4FD1A5">M</div>
+              <div class="team-avatar" style="background:#4FD1A5">Z</div>
               <div>
-                <div class="team-name">Maria</div>
-                <div class="team-role">Frontend & UX</div>
+                <div class="team-name">Ziad Saeed</div>
               </div>
             </div>
             <div class="team-card">
-              <div class="team-avatar" style="background:#E8C97A">A</div>
+              <div class="team-avatar" style="background:#E8C97A">M</div>
               <div>
-                <div class="team-name">Ahmed</div>
-                <div class="team-role">AI / TripoSR</div>
+                <div class="team-name">Mostafa Faheem</div>
               </div>
             </div>
             <div class="team-card">
-              <div class="team-avatar" style="background:#A78BFA">S</div>
+              <div class="team-avatar" style="background:#A78BFA">A</div>
               <div>
-                <div class="team-name">Sara</div>
-                <div class="team-role">Backend & API</div>
+                <div class="team-name">Ahmed Essam</div>
               </div>
             </div>
             <div class="team-card">
-              <div class="team-avatar" style="background:#38BDF8">O</div>
+              <div class="team-avatar" style="background:#38BDF8">M</div>
               <div>
-                <div class="team-name">Omar</div>
-                <div class="team-role">3D Pipeline</div>
+                <div class="team-name">Mariam Ahmed</div>
               </div>
             </div>
-          </div>
-        </div>
-        <div class="about-section">
-          <h4>Tech Stack</h4>
-          <div class="about-stack">
-            <span class="stack-pill">TripoSR</span>
-            <span class="stack-pill">PyTorch</span>
-            <span class="stack-pill">FastAPI</span>
-            <span class="stack-pill">Three.js</span>
-            <span class="stack-pill">rembg</span>
-            <span class="stack-pill">Trimesh</span>
-            <span class="stack-pill">Gradio</span>
-            <span class="stack-pill">Python 3.10</span>
+            <div class="team-card">
+              <div class="team-avatar" style="background:#F472B6">M</div>
+              <div>
+                <div class="team-name">Mariam Khaled</div>
+              </div>
+            </div>
+            <div class="team-card">
+              <div class="team-avatar" style="background:#FBBF24">A</div>
+              <div>
+                <div class="team-name">Arwa Abozlima</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="about-section">
@@ -3499,6 +3456,8 @@
     let meshData = null;
     let solidMat = null, texturedMat = null;
     let hasVertexColors = false;
+    let currentGlbUrl = null;
+    let useGlbTexturedPreview = false;
 
     function initThree() {
       const canvas = document.getElementById('three-canvas');
@@ -3547,6 +3506,7 @@
     function loadMesh(verts, faces, color, vertexColors) {
       if (solidMesh) { scene.remove(solidMesh); solidMesh.geometry.dispose(); solidMesh.material.dispose(); solidMesh = null; }
       if (wireMesh) { scene.remove(wireMesh); wireMesh = null; }
+      document.getElementById('textured-glb-viewer').style.display = 'none';
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts.flat()), 3));
       geo.setIndex(new THREE.BufferAttribute(new Uint32Array(faces.flat()), 1));
@@ -3586,10 +3546,10 @@
       document.getElementById('drag-hint').style.display = 'block';
       document.getElementById('viewer-toolbar').style.display = 'flex';
 
-      // Show/hide textured button depending on vertex color availability
+      // Show/hide textured button depending on GLB availability or vertex colors
       const texBtn = document.getElementById('vt-textured');
-      texBtn.style.display = hasVertexColors ? '' : 'none';
-      if (hasVertexColors) {
+      texBtn.style.display = (useGlbTexturedPreview || hasVertexColors) ? '' : 'none';
+      if (useGlbTexturedPreview || hasVertexColors) {
         setView('textured');
       } else {
         setView('solid');
@@ -3599,19 +3559,54 @@
     function setView(v) {
       const s = solidMesh, w = wireMesh;
       if (!s) return;
+      const canvas = document.getElementById('three-canvas');
+      const glbViewer = document.getElementById('textured-glb-viewer');
+      const dragHint = document.getElementById('drag-hint');
       if (v === 'textured') {
-        s.visible = true; s.material = texturedMat; s.material.wireframe = false; if (w) w.visible = false;
+        if (useGlbTexturedPreview && currentGlbUrl) {
+          canvas.style.display = 'none';
+          glbViewer.style.display = 'block';
+          dragHint.style.display = 'none';
+          s.visible = false;
+          if (w) w.visible = false;
+        } else {
+          glbViewer.style.display = 'none';
+          canvas.style.display = 'block';
+          dragHint.style.display = 'block';
+          s.visible = true; s.material = texturedMat; s.material.wireframe = false; if (w) w.visible = false;
+        }
       } else if (v === 'solid') {
+        glbViewer.style.display = 'none';
+        canvas.style.display = 'block';
+        dragHint.style.display = 'block';
         s.visible = true; s.material = solidMat; s.material.wireframe = false; if (w) w.visible = false;
       } else if (v === 'wire') {
+        glbViewer.style.display = 'none';
+        canvas.style.display = 'block';
+        dragHint.style.display = 'block';
         s.visible = false; if (w) w.visible = true;
       } else { // 'both'
+        glbViewer.style.display = 'none';
+        canvas.style.display = 'block';
+        dragHint.style.display = 'block';
         s.visible = true; s.material.wireframe = false; if (w) w.visible = true;
       }
       ['textured', 'solid', 'wire', 'both'].forEach(x => {
         const el = document.getElementById('vt-' + x);
         if (el) el.classList.toggle('on', x === v);
       });
+    }
+
+    function configureTexturedPreview(data, bakeTextureChecked) {
+      currentGlbUrl = data && data.glb_url ? API + data.glb_url : null;
+      useGlbTexturedPreview = Boolean(bakeTextureChecked && currentGlbUrl && !data.demo);
+      const glbViewer = document.getElementById('textured-glb-viewer');
+      glbViewer.style.display = 'none';
+      if (useGlbTexturedPreview) {
+        glbViewer.setAttribute('src', currentGlbUrl);
+      } else {
+        glbViewer.removeAttribute('src');
+      }
     }
 
     function resetCam() { camera.position.set(0, .4, 2.8); if (solidMesh) solidMesh.rotation.set(0, 0, 0); if (wireMesh) wireMesh.rotation.set(0, 0, 0); autoSpin = true; }
@@ -3663,51 +3658,39 @@
         uploadZone.style.display = 'none';
         document.getElementById('gen-btn').disabled = false;
         window._uploadedFile = file;
-
-        // Auto-detect category from backend classifier
+        
+        // Auto-classify
         classifyImage(file);
       };
       reader.readAsDataURL(file);
     }
 
     async function classifyImage(file) {
-      const field = document.getElementById('detected-category-field');
-      const badge = document.getElementById('detected-category-badge');
-      if (!field || !badge) return;
-
-      field.style.display = 'block';
+      const badge = document.getElementById('detected-badge');
+      const text = document.getElementById('detected-text');
+      if(!badge || !text) return;
+      
       badge.className = 'detected-badge loading';
-      badge.textContent = 'Classifying image...';
-
+      badge.textContent = 'Detecting...';
+      badge.style.display = 'inline-block';
+      text.textContent = 'Detecting...';
+      
       try {
         const fd = new FormData();
         fd.append('file', file);
-        const res = await fetch(API + '/classify', { 
-          method: 'POST', 
-          body: fd, 
-          signal: AbortSignal.timeout(15000) 
-        });
-        if (!res.ok) throw new Error('Classification failed');
+        const res = await fetch('http://localhost:8000/classify', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error();
         const data = await res.json();
         
-        // Sync with the hidden select element
-        const catSelect = document.getElementById('category');
-        if (catSelect) {
-          catSelect.value = data.category;
-        }
-
         badge.className = 'detected-badge success';
-        badge.textContent = data.category.toUpperCase() + ' (' + (data.confidence * 100).toFixed(0) + '% match)';
-        toast('Classifier: Detected ' + data.category.toUpperCase());
-      } catch (err) {
-        console.error(err);
-        badge.className = 'detected-badge error';
-        badge.textContent = 'Auto (failed to classify)';
+        badge.textContent = 'Detected';
+        text.textContent = data.category || data.label || 'Unknown';
         
-        const catSelect = document.getElementById('category');
-        if (catSelect) {
-          catSelect.value = 'chair'; // fallback
-        }
+        window.detectedCat = (data.category || data.label || 'chair').toLowerCase();
+      } catch (err) {
+        badge.className = 'detected-badge error';
+        badge.textContent = 'Failed';
+        text.textContent = 'Manual selection required';
       }
     }
 
@@ -3720,15 +3703,6 @@
       document.getElementById('gen-btn').disabled = true;
       // reset the file input so the same file can be re-selected
       fileInput.value = '';
-
-      // Reset detected category display
-      const field = document.getElementById('detected-category-field');
-      if (field) field.style.display = 'none';
-      const badge = document.getElementById('detected-category-badge');
-      if (badge) {
-        badge.className = 'detected-badge';
-        badge.textContent = '—';
-      }
     }
 
     // ─── PIPELINE MODE ────────────────────────────────────────────────────────────
@@ -3838,6 +3812,7 @@
       const croppedFile = new File([blob], 'segmented.png', { type: 'image/png' });
 
       let data;
+      const bakeTextureChecked = document.getElementById('tog-bake').classList.contains('on');
       try {
         setProg(15, 'Classifying furniture type…', 'Step 1 of 5');
         await delay(300);
@@ -3845,10 +3820,9 @@
         await delay(200);
         const fd = new FormData();
         fd.append('file', croppedFile);
-        fd.append('category', 'auto');
         fd.append('resolution', document.getElementById('resolution').value);
         fd.append('remove_bg', 'true');
-        fd.append('texture_res', '2048');
+        fd.append('bake_texture', bakeTextureChecked);
         setProg(45, 'Running TripoSR + LoRA inference…', 'Step 3 of 5');
         const res = await fetch(API + '/reconstruct', { method: 'POST', body: fd, signal: AbortSignal.timeout(600000) });
         if (!res.ok) throw new Error('Reconstruct failed');
@@ -3863,22 +3837,9 @@
 
       await delay(300);
       meshData = data;
+      configureTexturedPreview(data, bakeTextureChecked);
       const color = document.getElementById('mesh-color').value;
       loadMesh(data.vertices, data.faces, color, data.vertex_colors);
-
-      // Update stats
-      document.getElementById('sv-verts').textContent = (data.n_vertices || 0).toLocaleString();
-      document.getElementById('sv-faces').textContent = (data.n_faces || 0).toLocaleString();
-      document.getElementById('sv-time').textContent = (data.time_sec || '?') + 's';
-      document.getElementById('sv-score').textContent =
-        data.confidence ? (data.confidence * 100).toFixed(0) + '%' : SCORES[data.category] || '75%';
-
-      const badge = document.getElementById('mode-badge');
-      badge.className = 'mode-badge ' + (data.demo ? 'demo' : 'real');
-      badge.textContent = data.demo
-        ? 'Demo mesh — connect Python backend for real TripoSR'
-        : 'Real TripoSR + LoRA · Auto-classified: ' + (data.category || '—').toUpperCase();
-      document.getElementById('stats-wrap').style.display = 'block';
 
       // Enable exports
       document.getElementById('exp-obj').setAttribute('aria-disabled', 'false');
@@ -3929,6 +3890,7 @@
       document.getElementById('gen-btn').classList.add('loading');
 
       let data;
+      const bakeTextureChecked = document.getElementById('tog-bake').classList.contains('on');
       try {
         setProg(15, 'Preprocessing image…', 'Step 1 of 4');
         await delay(400);
@@ -3937,6 +3899,7 @@
         fd.append('category', 'auto');
         fd.append('resolution', document.getElementById('resolution').value);
         fd.append('remove_bg', document.getElementById('tog-bg').classList.contains('on'));
+        fd.append('bake_texture', bakeTextureChecked);
         setProg(35, 'Running TripoSR inference…', 'Step 2 of 4');
         const res = await fetch(API + '/reconstruct', { method: 'POST', body: fd, signal: AbortSignal.timeout(600000) });
         if (!res.ok) throw new Error('API error');
@@ -3945,22 +3908,14 @@
       } catch (e) {
         setProg(45, 'Generating demo mesh…', 'Step 2 of 4');
         await delay(700);
-        const cat = document.getElementById('category').value;
+        const cat = window.detectedCat || 'chair';
         data = demoMesh(cat);
         setProg(80, 'Building viewer…', 'Step 3 of 4');
       }
       await delay(300);
       meshData = data;
+      configureTexturedPreview(data, bakeTextureChecked);
       loadMesh(data.vertices, data.faces, color, data.vertex_colors);
-      document.getElementById('sv-verts').textContent = (data.n_vertices || 0).toLocaleString();
-      document.getElementById('sv-faces').textContent = (data.n_faces || 0).toLocaleString();
-      document.getElementById('sv-time').textContent = (data.time_sec || '?') + 's';
-      document.getElementById('sv-score').textContent =
-        data.confidence ? (data.confidence * 100).toFixed(0) + '%' : SCORES[data.category || 'chair'] || '75%';
-      const badge = document.getElementById('mode-badge');
-      badge.className = 'mode-badge ' + (data.demo ? 'demo' : 'real');
-      badge.textContent = data.demo ? 'Demo mesh — connect Python backend' : 'Real TripoSR reconstruction';
-      document.getElementById('stats-wrap').style.display = 'block';
       document.getElementById('exp-obj').setAttribute('aria-disabled', 'false');
       document.getElementById('exp-obj').style.opacity = '1';
       document.getElementById('exp-obj').style.pointerEvents = '';
@@ -4031,139 +3986,12 @@
       toast('OBJ file downloaded');
     }
 
-    // ─── ROOM PLACEMENT ───────────────────────────────────────────────────────────
-    let furnishImg = null, roomBgImg = null;
 
-    function setupRoomUpload(inputId, previewId, imgId, callback) {
-      const input = document.getElementById(inputId);
-      input.addEventListener('change', () => {
-        if (!input.files[0]) return;
-        const reader = new FileReader();
-        reader.onload = e => {
-          document.getElementById(imgId).src = e.target.result;
-          document.getElementById(previewId).style.display = 'block';
-          callback(e.target.result);
-        };
-        reader.readAsDataURL(input.files[0]);
-      });
-    }
-
-    setupRoomUpload('room-furn-input', 'furn-preview', 'furn-img', src => {
-      // Reset 3D button since user is now using a photo
-      document.getElementById('use3d-btn').classList.remove('active');
-      document.getElementById('use3d-badge').textContent = solidMesh ? 'Ready — click to use' : 'No model yet';
-      document.getElementById('furn-source-label').style.display = 'none';
-
-      // Show original as preview
-      furnishImg = new Image();
-      furnishImg.src = src;
-      furnishImg.onload = () => tryRoom();
-
-      // Then send to backend to remove background — use the transparent version for compositing
-      const input = document.getElementById('room-furn-input');
-      if (!input.files[0]) return;
-      const fd = new FormData();
-      fd.append('file', input.files[0]);
-      const previewEl = document.getElementById('furn-preview');
-      // Show a small loading indicator on the preview
-      previewEl.style.opacity = '0.5';
-      previewEl.title = 'Removing background…';
-      fetch('http://localhost:8000/remove-bg', { method: 'POST', body: fd })
-        .then(r => { if (!r.ok) throw new Error('bg removal failed'); return r.blob(); })
-        .then(blob => {
-          const url = URL.createObjectURL(blob);
-          const cleaned = new Image();
-          cleaned.onload = () => {
-            furnishImg = cleaned;   // replace with transparent version
-            previewEl.style.opacity = '1';
-            previewEl.title = 'Background removed ✓';
-            document.getElementById('furn-img').src = url;
-            tryRoom();
-            toast('Background removed ✓');
-          };
-          cleaned.src = url;
-        })
-        .catch(() => {
-          // backend not available or failed — just use original image
-          previewEl.style.opacity = '1';
-          previewEl.title = '';
-          toast('Could not remove background — using original image', 'err');
-        });
-    });
-    setupRoomUpload('room-bg-input', 'room-preview', 'room-img', src => {
-      roomBgImg = new Image(); roomBgImg.src = src;
-      roomBgImg.onload = () => tryRoom();
-    });
-
-    ['r-scale', 'r-x', 'r-y'].forEach(id => {
-      document.getElementById(id).addEventListener('input', function () {
-        const labels = {
-          'r-scale': 'scale-val', 'r-x': 'rx-val', 'r-y': 'ry-val'
-        };
-        document.getElementById(labels[id]).textContent = this.value + '%';
-        tryRoom();
-      });
-    });
-    document.getElementById('r-rot').addEventListener('input', function () {
-      document.getElementById('rot-val').textContent = this.value + '°';
-      tryRoom();
-    });
-
-    function tryRoom() { if (furnishImg && roomBgImg) placeInRoom(); }
-
-    function placeInRoom() {
-      if (!furnishImg || !roomBgImg) { toast('Upload both photos first', 'err'); return; }
-      const canvas = document.getElementById('room-canvas');
-      const W = 1200, H = 800;
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(roomBgImg, 0, 0, W, H);
-      const scale = parseFloat(document.getElementById('r-scale').value) / 100;
-      const xPos = parseFloat(document.getElementById('r-x').value) / 100;
-      const yPos = parseFloat(document.getElementById('r-y').value) / 100;
-      const rot = parseFloat(document.getElementById('r-rot').value) * Math.PI / 180;
-      const fw = Math.round(W * scale);
-      const fh = Math.round(furnishImg.height * (fw / furnishImg.width));
-      const px = Math.round(W * xPos - fw / 2);
-      const py = Math.round(H * yPos - fh);
-      const cx = px + fw / 2, cy = py + fh / 2;
-      // shadow
-      ctx.save();
-      ctx.globalAlpha = 0.25;
-      ctx.filter = 'blur(18px)';
-      ctx.fillStyle = '#000';
-      ctx.translate(cx, py + fh - 4);
-      ctx.rotate(rot);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, fw * 0.45, fh * 0.06, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      // draw furniture with rotation
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(rot);
-      ctx.drawImage(furnishImg, -fw / 2, -fh / 2, fw, fh);
-      ctx.restore();
-      document.getElementById('room-result-wrap').querySelector('div').style.display = 'none';
-      canvas.style.display = 'block';
-      document.getElementById('room-drag-hint').style.display = 'block';
-      document.getElementById('room-dl').setAttribute('aria-disabled', 'false');
-      document.getElementById('room-dl').style.opacity = '1';
-      document.getElementById('room-dl').style.pointerEvents = '';
-    }
-
-    function downloadRoom() {
-      const canvas = document.getElementById('room-canvas');
-      const a = document.createElement('a');
-      a.href = canvas.toDataURL('image/jpeg', 0.92);
-      a.download = 'furnishar_room_preview.jpg';
-      a.click();
-      toast('Room preview saved');
-    }
 
     // ─── CONTROLS ─────────────────────────────────────────────────────────────────
     document.getElementById('resolution').addEventListener('input', function () { document.getElementById('res-val').textContent = this.value; });
     document.getElementById('tog-bg').addEventListener('click', function () { this.classList.toggle('on'); });
+    document.getElementById('tog-bake').addEventListener('click', function () { this.classList.toggle('on'); });
     document.getElementById('tog-wire').addEventListener('click', function () {
       this.classList.toggle('on');
       if (wireMesh) wireMesh.visible = this.classList.contains('on');
@@ -4201,61 +4029,7 @@
     // sync color picker click through swatch
     document.getElementById('color-swatch').addEventListener('click', () => document.getElementById('mesh-color').click());
 
-    // ─── USE 3D MODEL IN ROOM ─────────────────────────────────────────────────────
-    function use3DModel() {
-      if (!solidMesh) {
-        toast('Generate a 3D model first in the Reconstruction tab', 'err');
-        return;
-      }
 
-      // Snapshot the Three.js canvas with transparent background
-      // Temporarily set transparent bg, render, restore
-      const origClearColor = renderer.getClearColor(new THREE.Color());
-      const origAlpha = renderer.getClearAlpha();
-      renderer.setClearColor(0x000000, 0);   // transparent
-      renderer.render(scene, camera);
-      const dataURL = renderer.domElement.toDataURL('image/png');
-      renderer.setClearColor(origClearColor, origAlpha);   // restore
-
-      // Load the snapshot as the furniture image
-      const img = new Image();
-      img.onload = () => {
-        furnishImg = img;
-        // Show in preview
-        document.getElementById('furn-img').src = dataURL;
-        document.getElementById('furn-preview').style.display = 'block';
-        // Mark the button as active
-        document.getElementById('use3d-btn').classList.add('active');
-        document.getElementById('use3d-badge').textContent = 'Active ✓';
-        // Show source label
-        const lbl = document.getElementById('furn-source-label');
-        lbl.textContent = '✓ Using 3D model snapshot';
-        lbl.style.display = 'block';
-        tryRoom();
-        toast('3D model loaded into room placement!');
-      };
-      img.src = dataURL;
-    }
-
-    // Keep 3D button state fresh when switching to room tab
-    function switchTab(id, btn) {
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.getElementById('tab-' + id).classList.add('active');
-      btn.classList.add('active');
-      // Update Use 3D Model button badge
-      if (id === 'room') {
-        const badge = document.getElementById('use3d-badge');
-        const use3dBtn = document.getElementById('use3d-btn');
-        if (solidMesh && !use3dBtn.classList.contains('active')) {
-          badge.textContent = 'Ready — click to use';
-          badge.style.color = 'var(--accent)';
-        } else if (!solidMesh) {
-          badge.textContent = 'No model yet';
-          badge.style.color = '';
-        }
-      }
-    }
 
     // ─── PROGRESS ─────────────────────────────────────────────────────────────────
     function showProgress(v) { document.getElementById('progress-overlay').classList.toggle('show', v); }
@@ -4355,109 +4129,22 @@
 
     // ─── CATEGORY CARD CLICK ─────────────────────────────────────────────────────
     function selectCategory(cat) {
-      document.getElementById('category').value = cat;
       document.getElementById('app-section').scrollIntoView({ behavior: 'smooth' });
-      
-      const field = document.getElementById('detected-category-field');
-      const badge = document.getElementById('detected-category-badge');
-      if (field && badge) {
-        field.style.display = 'block';
-        badge.className = 'detected-badge success';
-        badge.textContent = 'PRESET: ' + cat.toUpperCase();
-      }
-      
-      toast('Selected preset category: ' + cat.toUpperCase() + '. Upload a photo to auto-classify!');
+      toast('Upload a photo of a ' + cat + ' to generate!');
     }
     function closeDropdown() { document.activeElement.blur(); }
 
     // ─── UTIL ─────────────────────────────────────────────────────────────────────
     const delay = ms => new Promise(r => setTimeout(r, ms));
 
-    // ─── ROOM CANVAS DRAG-TO-MOVE & SCROLL-TO-ROTATE ─────────────────────────────
-    (function () {
-      const rc = document.getElementById('room-canvas');
-      let dragging = false, dragStartX = 0, dragStartY = 0, sliderXStart = 0, sliderYStart = 0;
 
-      rc.addEventListener('mousedown', e => {
-        if (!furnishImg || !roomBgImg) return;
-        dragging = true;
-        rc.style.cursor = 'grabbing';
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        sliderXStart = parseFloat(document.getElementById('r-x').value);
-        sliderYStart = parseFloat(document.getElementById('r-y').value);
-        e.preventDefault();
-      });
-
-      window.addEventListener('mousemove', e => {
-        if (!dragging) return;
-        const rect = rc.getBoundingClientRect();
-        // Map pixel delta to slider percentage: canvas display width maps to 0-100%
-        const dx = (e.clientX - dragStartX) / rect.width * 100;
-        const dy = (e.clientY - dragStartY) / rect.height * 100;
-        const newX = Math.max(0, Math.min(100, sliderXStart + dx));
-        const newY = Math.max(10, Math.min(100, sliderYStart + dy));
-        const sliderX = document.getElementById('r-x');
-        const sliderY = document.getElementById('r-y');
-        sliderX.value = Math.round(newX);
-        sliderY.value = Math.round(newY);
-        document.getElementById('rx-val').textContent = sliderX.value + '%';
-        document.getElementById('ry-val').textContent = sliderY.value + '%';
-        tryRoom();
-      });
-
-      window.addEventListener('mouseup', () => {
-        if (dragging) { dragging = false; rc.style.cursor = 'grab'; }
-      });
-
-      // Touch drag support
-      rc.addEventListener('touchstart', e => {
-        if (!furnishImg || !roomBgImg) return;
-        dragging = true;
-        const t = e.touches[0];
-        dragStartX = t.clientX;
-        dragStartY = t.clientY;
-        sliderXStart = parseFloat(document.getElementById('r-x').value);
-        sliderYStart = parseFloat(document.getElementById('r-y').value);
-      }, { passive: true });
-
-      rc.addEventListener('touchmove', e => {
-        if (!dragging) return;
-        const t = e.touches[0];
-        const rect = rc.getBoundingClientRect();
-        const dx = (t.clientX - dragStartX) / rect.width * 100;
-        const dy = (t.clientY - dragStartY) / rect.height * 100;
-        const newX = Math.max(0, Math.min(100, sliderXStart + dx));
-        const newY = Math.max(10, Math.min(100, sliderYStart + dy));
-        document.getElementById('r-x').value = Math.round(newX);
-        document.getElementById('r-y').value = Math.round(newY);
-        document.getElementById('rx-val').textContent = Math.round(newX) + '%';
-        document.getElementById('ry-val').textContent = Math.round(newY) + '%';
-        tryRoom();
-      }, { passive: true });
-
-      rc.addEventListener('touchend', () => { dragging = false; });
-
-      // Scroll-to-rotate on the room canvas
-      rc.addEventListener('wheel', e => {
-        if (!furnishImg || !roomBgImg) return;
-        e.preventDefault();
-        const slider = document.getElementById('r-rot');
-        let val = parseFloat(slider.value) + (e.deltaY > 0 ? 3 : -3);
-        val = Math.max(-180, Math.min(180, val));
-        slider.value = Math.round(val);
-        document.getElementById('rot-val').textContent = Math.round(val) + '°';
-        tryRoom();
-      });
-    })();
 
     // ─── INIT ─────────────────────────────────────────────────────────────────────
     initThree();
     updateNavAuth();
     document.getElementById('exp-obj').style.opacity = '.3';
     document.getElementById('exp-obj').style.pointerEvents = 'none';
-    document.getElementById('room-dl').style.opacity = '.3';
-    document.getElementById('room-dl').style.pointerEvents = 'none';
+
   </script>
 </body>
 

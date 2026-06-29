@@ -197,6 +197,21 @@ def load_all_models():
             adapter_manager.preload_all()
         print(f"TripoSR + LoRA ready. Adapters loaded: {list(adapter_file_map.keys())}", flush=True)
 
+        if DEVICE == "cuda":
+            try:
+                torch.set_float32_matmul_precision("high")
+                model = torch.compile(model, backend="aot_eager")
+
+                print("Warming up compiled graph (this takes ~30s)...", flush=True)
+                amp_dtype = torch.bfloat16 if hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported() else torch.float16
+                dummy_img = Image.new("RGB", (256, 256), (128, 128, 128))
+                with torch.no_grad():
+                    with torch.autocast("cuda", dtype=amp_dtype):
+                        _ = model([dummy_img], device=DEVICE)
+                print("Graph compilation warm-up complete.", flush=True)
+            except Exception as e:
+                print(f"torch.compile optimization skipped: {e}", flush=True)
+
         TRIPOSR_READY = True
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -369,17 +384,17 @@ def _run_inference_baked(
     resolution: int = 256,
     texture_res: int = 2048,
     use_adaptive_mc=None,
+    bake_texture: bool = True,
 ):
     """
     Full pipeline:
       TripoSR encode →
-        1. Extract mesh WITH vertex colors  → used for Three.js viewer JSON
-           (uses adaptive MC if --adaptive flag is set, otherwise standard MC)
-        2. Extract mesh WITHOUT vertex colors → bake texture → GLB for AR
+        1. Extract a coarse mesh WITH vertex colors  → used for Three.js viewer JSON
+        2. Extract a full-resolution mesh WITHOUT vertex colors → bake texture → GLB for AR
       If texture baking fails, fall back to exporting the vertex-color mesh as GLB.
 
     Returns (glb_bytes, vc_mesh, scene_codes, elapsed_sec).
-      - vc_mesh is the vertex-color mesh (higher quality for the Three.js viewer)
+      - vc_mesh is the coarse vertex-color preview mesh used by the Three.js viewer
     """
     import torch
     import trimesh
@@ -401,7 +416,8 @@ def _run_inference_baked(
             scene_codes = model([img], device=DEVICE)
     scene_codes = scene_codes.float()
 
-    # ── 1. Vertex-color mesh ──────────────────────────────────────────────
+    # ── 1. Coarse vertex-color mesh for fast JSON preview ─────────────────
+    preview_resolution = min(resolution, 128)
     if use_adaptive:
         try:
             from adaptive_mc import extract_mesh_adaptive
@@ -409,84 +425,108 @@ def _run_inference_baked(
                 model,
                 scene_codes[0],
                 device=DEVICE,
-                resolution=resolution,
-                coarse_resolution=MC_COARSE_RESOLUTION,
+                resolution=preview_resolution,
+                coarse_resolution=min(MC_COARSE_RESOLUTION, preview_resolution),
                 has_vertex_color=True,
             )
-            print(f"Adaptive MC (vertex-color): {len(vc_mesh.vertices):,} verts, {len(vc_mesh.faces):,} faces", flush=True)
+            print(f"Adaptive MC preview: {len(vc_mesh.vertices):,} verts, {len(vc_mesh.faces):,} faces", flush=True)
         except Exception as e:
             print(f"Adaptive MC failed ({e}) — falling back to standard.", flush=True)
-            vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)
+            vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=preview_resolution)
             vc_mesh = vc_meshes[0]
     else:
-        vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)
+        vc_meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=preview_resolution)
         vc_mesh = vc_meshes[0]
-        print(f"Standard MC (vertex-color): {len(vc_mesh.vertices):,} verts, {len(vc_mesh.faces):,} faces", flush=True)
+        print(f"Standard MC preview: {len(vc_mesh.vertices):,} verts, {len(vc_mesh.faces):,} faces", flush=True)
     _apply_ar_upright_orientation(vc_mesh)
 
     # ── 2. Try texture-baked GLB for model-viewer / AR
     glb_bytes = None
-    try:
-        import xatlas
-        from tsr.bake_texture import bake_texture
+    if bake_texture:
+        try:
+            import xatlas
+            from tsr.bake_texture import bake_texture
 
-        # Extract a second mesh WITHOUT vertex colors — bake_texture needs raw geometry
+            # Extract a second mesh WITHOUT vertex colors — bake_texture needs raw geometry
+            if use_adaptive:
+                try:
+                    from adaptive_mc import extract_mesh_adaptive
+                    raw_mesh = extract_mesh_adaptive(
+                        model,
+                        scene_codes[0],
+                        device=DEVICE,
+                        resolution=resolution,
+                        coarse_resolution=MC_COARSE_RESOLUTION,
+                        has_vertex_color=False,
+                    )
+                    print(f"Adaptive MC raw: {len(raw_mesh.vertices):,} verts, {len(raw_mesh.faces):,} faces", flush=True)
+                except Exception as e:
+                    print(f"Adaptive MC raw mesh failed ({e}) — falling back to standard.", flush=True)
+                    raw_meshes = model.extract_mesh(scene_codes, has_vertex_color=False, resolution=resolution)
+                    raw_mesh = raw_meshes[0]
+            else:
+                raw_meshes = model.extract_mesh(scene_codes, has_vertex_color=False, resolution=resolution)
+                raw_mesh = raw_meshes[0]
+
+            bake_output = bake_texture(raw_mesh, model, scene_codes[0], texture_res)
+            texture_img = Image.fromarray(
+                (bake_output["colors"] * 255.0).astype(np.uint8)
+            ).transpose(Image.FLIP_TOP_BOTTOM).convert("RGB")
+
+            # xatlas UV unwrap → trimesh with embedded texture → GLB bytes
+            with tempfile.TemporaryDirectory() as tmp:
+                obj_path = os.path.join(tmp, "mesh.obj")
+                xatlas.export(
+                    obj_path,
+                    raw_mesh.vertices[bake_output["vmapping"]],
+                    bake_output["indices"],
+                    bake_output["uvs"],
+                    raw_mesh.vertex_normals[bake_output["vmapping"]],
+                )
+                material = trimesh.visual.material.PBRMaterial(
+                    baseColorTexture=texture_img,
+                    metallicFactor=0.0,
+                    roughnessFactor=0.8,
+                )
+                vis = trimesh.visual.TextureVisuals(uv=bake_output["uvs"], material=material)
+                textured = trimesh.Trimesh(
+                    vertices=raw_mesh.vertices[bake_output["vmapping"]],
+                    faces=bake_output["indices"],
+                    vertex_normals=raw_mesh.vertex_normals[bake_output["vmapping"]],
+                    visual=vis,
+                    process=False,
+                )
+                _apply_ar_upright_orientation(textured)
+                buf = io.BytesIO()
+                textured.export(buf, file_type="glb")
+                glb_bytes = buf.getvalue()
+            print("Texture bake succeeded — GLB has embedded high-res texture.", flush=True)
+        except Exception as e:
+            print(f"Texture bake failed ({e}) — falling back to vertex-color GLB.", flush=True)
+    else:
+        print("Texture bake skipped by user — exporting fast vertex-color GLB.", flush=True)
+
+    # ── Fallback: export a high-resolution vertex-color mesh as GLB directly
+    if glb_bytes is None:
         if use_adaptive:
             try:
                 from adaptive_mc import extract_mesh_adaptive
-                raw_mesh = extract_mesh_adaptive(
+                export_mesh = extract_mesh_adaptive(
                     model,
                     scene_codes[0],
                     device=DEVICE,
                     resolution=resolution,
                     coarse_resolution=MC_COARSE_RESOLUTION,
-                    has_vertex_color=False,
+                    has_vertex_color=True,
                 )
-                print(f"Adaptive MC (raw): {len(raw_mesh.vertices):,} verts, {len(raw_mesh.faces):,} faces", flush=True)
             except Exception as e:
-                print(f"Adaptive MC raw mesh failed ({e}) — falling back to standard.", flush=True)
-                raw_meshes = model.extract_mesh(scene_codes, has_vertex_color=False, resolution=resolution)
-                raw_mesh = raw_meshes[0]
+                print(f"Adaptive MC fallback failed ({e}) — using standard high-res vertex-color mesh.", flush=True)
+                export_mesh = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)[0]
         else:
-            raw_meshes = model.extract_mesh(scene_codes, has_vertex_color=False, resolution=resolution)
-            raw_mesh = raw_meshes[0]
-
-        bake_output = bake_texture(raw_mesh, model, scene_codes[0], texture_res)
-        texture_img = Image.fromarray(
-            (bake_output["colors"] * 255.0).astype(np.uint8)
-        ).transpose(Image.FLIP_TOP_BOTTOM)
-
-        # xatlas UV unwrap → trimesh with embedded texture → GLB bytes
-        with tempfile.TemporaryDirectory() as tmp:
-            obj_path = os.path.join(tmp, "mesh.obj")
-            xatlas.export(
-                obj_path,
-                raw_mesh.vertices[bake_output["vmapping"]],
-                bake_output["indices"],
-                bake_output["uvs"],
-                raw_mesh.vertex_normals[bake_output["vmapping"]],
-            )
-            material = trimesh.visual.texture.SimpleMaterial(image=texture_img)
-            vis = trimesh.visual.TextureVisuals(uv=bake_output["uvs"], material=material)
-            textured = trimesh.Trimesh(
-                vertices=raw_mesh.vertices[bake_output["vmapping"]],
-                faces=bake_output["indices"],
-                vertex_normals=raw_mesh.vertex_normals[bake_output["vmapping"]],
-                visual=vis,
-                process=False,
-            )
-            _apply_ar_upright_orientation(textured)
-            buf = io.BytesIO()
-            textured.export(buf, file_type="glb")
-            glb_bytes = buf.getvalue()
-        print("Texture bake succeeded — GLB has embedded texture.", flush=True)
-    except Exception as e:
-        print(f"Texture bake failed ({e}) — falling back to vertex-color GLB.", flush=True)
-
-    # ── Fallback: export vertex-color mesh as GLB directly
-    if glb_bytes is None:
+            export_mesh = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution)[0]
+        _apply_ar_upright_orientation(export_mesh)
         buf = io.BytesIO()
-        vc_mesh.export(buf, file_type="glb")
+        export_mesh.export(buf, file_type="glb")
         glb_bytes = buf.getvalue()
 
     elapsed = round(time.time() - t0, 2)
@@ -590,6 +630,7 @@ async def mobile_reconstruct(
     segmentation: bool = Form(False),
     resolution: int = Form(None),
     texture_res: int = Form(2048),
+    bake_texture: bool = Form(True),
     include_geometry: bool = Form(False),
 ):
     """Use phone-side ONNX preprocessing/classification, then reconstruct."""
@@ -623,6 +664,7 @@ async def mobile_reconstruct(
             resolution=resolution,
             texture_res=texture_res,
             use_adaptive_mc=False,
+            bake_texture=bake_texture,
         )
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -638,6 +680,7 @@ async def mobile_reconstruct(
             "segmentation": bool(segmentation),
             "adapter": active_adapter,
             "mc_mode": "standard",
+            "bake_texture": bool(bake_texture),
             "client_preprocessed": True,
         },
         include_geometry=include_geometry,
@@ -754,6 +797,7 @@ async def reconstruct(
     resolution:  int  = Form(None),
     remove_bg:   bool = Form(True),
     texture_res: int  = Form(2048),
+    bake_texture: bool = Form(True),
     include_geometry: bool = Form(True),
 ):
     if not TRIPOSR_READY:
@@ -770,7 +814,10 @@ async def reconstruct(
     resolution  = max(64, min(512, int(resolution if resolution is not None else MC_RESOLUTION)))
     texture_res = max(512, min(4096, int(texture_res)))
 
+    t_start = time.time()
+
     # ── Preprocess ────────────────────────────────────────────────────────────
+    t_pre_start = time.time()
     try:
         img = preprocess_image(
             img,
@@ -779,8 +826,10 @@ async def reconstruct(
     except Exception as e:
         import traceback; traceback.print_exc()
         raise HTTPException(500, f"Preprocessing failed: {e}")
+    t_pre = time.time() - t_pre_start
 
     # ── Classify ──────────────────────────────────────────────────────────────
+    t_cls_start = time.time()
     detected_category  = "chair"
     detected_confidence = 0.0
     if CLIP_READY:
@@ -791,19 +840,32 @@ async def reconstruct(
     else:
         # Fall back to the manually passed category
         detected_category = category if category != "auto" else "chair"
+    t_cls = time.time() - t_cls_start
 
     # ── Route adapter ─────────────────────────────────────────────────────────
     active_adapter = _set_adapter(detected_category)
     print(f"Category: {detected_category} ({detected_confidence:.1%}) | Adapter: {active_adapter}", flush=True)
 
     # ── Inference + texture bake ──────────────────────────────────────────────
+    t_inf_start = time.time()
     try:
         glb_bytes, vc_mesh, scene_codes, elapsed = _run_inference_baked(
-            img, resolution=resolution, texture_res=texture_res
+            img,
+            resolution=resolution,
+            texture_res=texture_res,
+            bake_texture=bake_texture,
         )
     except Exception as e:
         import traceback; traceback.print_exc()
         raise HTTPException(500, f"Reconstruction failed: {e}")
+    t_inf = time.time() - t_inf_start
+    t_total = time.time() - t_start
+
+    print("\n[ LATENCY BREAKDOWN ]", flush=True)
+    print(f"  Background removal/preprocess: {t_pre:.2f}s", flush=True)
+    print(f"  CLIP class routing:           {t_cls:.2f}s", flush=True)
+    print(f"  TripoSR + mesh/GLB export:    {t_inf:.2f}s", flush=True)
+    print(f"  TOTAL WALL-CLOCK:             {t_total:.2f}s\n", flush=True)
 
     # ── Save GLB ──────────────────────────────────────────────────────────────
     return _store_reconstruction_result(
@@ -811,7 +873,7 @@ async def reconstruct(
         vc_mesh,
         detected_category,
         detected_confidence,
-        elapsed,
+        round(t_total, 2),
         include_geometry=include_geometry,
     )
 
