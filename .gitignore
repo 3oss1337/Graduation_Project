@@ -27,6 +27,7 @@ data/
 datasets/
 output/
 outputs/
+Received Inputs/
 
 # Model weights and adapters
 models/clip-vit-base-patch32/
