@@ -20,7 +20,7 @@ FurnishAR is an AI furniture reconstruction and AR preview app. It turns a singl
 ## Project Layout
 
 - `backend.py`: FastAPI backend for classification, segmentation, reconstruction, GLB baking, QR, AR viewer, and export.
-- `FurnishAR.html` / `FurnishAR (1).html`: web frontend.
+- `FurnishAR.html`: web frontend.
 - `mobile/furnishar_mobile`: Flutter mobile app.
 - `adapters/`: LoRA adapter files.
 - `stabilityai/`: local TripoSR model config/weights.
