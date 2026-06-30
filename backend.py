@@ -32,6 +32,7 @@ Run:
 import base64
 import io
 import os
+import shutil
 import socket
 import time
 import uuid
@@ -54,9 +55,10 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-STATIC_MODELS_DIR = Path("static/models")
+PROJECT_ROOT = Path(__file__).resolve().parent
+STATIC_MODELS_DIR = PROJECT_ROOT / "static/models"
 STATIC_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-TEMPLATES_DIR = Path("templates")
+TEMPLATES_DIR = PROJECT_ROOT / "templates"
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 EXPORT_DIR = Path(tempfile.gettempdir()) / "furnishar"
 EXPORT_DIR.mkdir(exist_ok=True)
@@ -92,8 +94,14 @@ ADAPTER_MAP = {
     "bookshelf":   "lora_cabinet_bookshelf.pt",
 }
 
-SAM_CHECKPOINT  = Path("checkpoints/sam_vit_b_01ec64.pth")
-ADAPTER_DIR     = Path("adapters")
+SAM_CHECKPOINT  = PROJECT_ROOT / "checkpoints/sam_vit_b_01ec64.pth"
+ADAPTER_DIR     = PROJECT_ROOT / "adapters"
+TRIPOSR_REPO_ID = os.environ.get("FURNISHAR_TRIPOSR_REPO", "stabilityai/TripoSR")
+TRIPOSR_DIR     = Path(
+    os.environ.get("FURNISHAR_TRIPOSR_DIR", str(PROJECT_ROOT / "stabilityai"))
+).expanduser()
+TRIPOSR_CONFIG  = "config.yaml"
+TRIPOSR_WEIGHTS = "model.ckpt"
 
 # ── Global model handles ──────────────────────────────────────────────────────
 model          = None
@@ -111,6 +119,48 @@ MC_RESOLUTION   = 256    # fine grid resolution, set via --mc-resolution
 MC_COARSE_RESOLUTION = 128  # coarse grid resolution, set via --mc-coarse-resolution
 
 # ── Startup — load everything once ───────────────────────────────────────────
+def _ensure_triposr_local_model() -> Path:
+    """Ensure TripoSR config/weights exist locally.
+
+    Hugging Face Hub checks the user's normal cache first, so an already cached
+    TripoSR download is copied locally without fetching it again.
+    """
+    required = {
+        TRIPOSR_CONFIG: TRIPOSR_DIR / TRIPOSR_CONFIG,
+        TRIPOSR_WEIGHTS: TRIPOSR_DIR / TRIPOSR_WEIGHTS,
+    }
+    missing = [
+        filename
+        for filename, path in required.items()
+        if not path.exists() or path.stat().st_size == 0
+    ]
+    if not missing:
+        return TRIPOSR_DIR
+
+    from huggingface_hub import hf_hub_download
+
+    TRIPOSR_DIR.mkdir(parents=True, exist_ok=True)
+    print(
+        f"Missing TripoSR files in {TRIPOSR_DIR}: {', '.join(missing)}. "
+        f"Resolving from Hugging Face repo {TRIPOSR_REPO_ID}...",
+        flush=True,
+    )
+    for filename in missing:
+        try:
+            cached_path = hf_hub_download(repo_id=TRIPOSR_REPO_ID, filename=filename)
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not resolve {filename} from {TRIPOSR_REPO_ID}. "
+                "If this machine is offline, pre-cache the model with Hugging Face "
+                f"or place {filename} in {TRIPOSR_DIR}."
+            ) from e
+        target_path = TRIPOSR_DIR / filename
+        shutil.copy2(cached_path, target_path)
+        print(f"Saved {filename} to {target_path}", flush=True)
+
+    return TRIPOSR_DIR
+
+
 def load_all_models():
     global model, adapter_manager, sam_predictor, clip_classifier
     global rembg_session, DEVICE, TRIPOSR_READY, SAM_READY, CLIP_READY
@@ -162,10 +212,11 @@ def load_all_models():
         from tsr.system import TSR
         from tsr.models.transformer.lora import LoRAAdapterManager
 
+        triposr_dir = _ensure_triposr_local_model()
         model = TSR.from_pretrained(
-            "./stabilityai",
-            config_name="config.yaml",
-            weight_name="model.ckpt",
+            str(triposr_dir),
+            config_name=TRIPOSR_CONFIG,
+            weight_name=TRIPOSR_WEIGHTS,
         )
 
         # Freeze base model and inject LoRA
